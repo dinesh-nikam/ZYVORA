@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install -e backend -e cli -e telegram_bot
+          uv pip install pytest pytest-asyncio pytest-cov ruff mypy
+
+      - name: Run Ruff Lint Check
+        run: |
+          source .venv/bin/activate
+          ruff check .
+
+      - name: Run Ruff Format Check
+        run: |
+          source .venv/bin/activate
+          ruff format --check .
+
+      - name: Run Mypy Type Check
+        run: |
+          source .venv/bin/activate
+          mypy backend/app
+
+      - name: Run Automated Test Suite
+        env:
+          SECRET_KEY: test_secret_key_with_at_least_32_characters_long_for_jwt!
+          BLIND_INDEX_KEY: test_blind_index_key_with_at_least_32_characters!
+          JOB_BACKEND: inline
+        run: |
+          source .venv/bin/activate
+          pytest --cov=backend/app --cov=cli/phoneintel_cli --cov=telegram_bot/phoneintel_bot --cov-report=term-missing
