@@ -13,7 +13,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.models.enums import JobStatus
 
@@ -39,7 +39,7 @@ class ArqJobQueue:
         self._dsn = redis_dsn
         self._pool: object | None = None
 
-    async def _get_pool(self):  # type: ignore[no-untyped-def]
+    async def _get_pool(self) -> Any:
         if self._pool is None:
             from arq import create_pool  # noqa: PLC0415
             from arq.connections import RedisSettings  # noqa: PLC0415

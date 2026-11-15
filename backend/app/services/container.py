@@ -124,7 +124,7 @@ async def build_container(
                                    concurrency=settings.discovery_max_concurrency),
         events=EventBus(redis_client),
         rate_limiter=RateLimiter(redis_client),
-        jobs=InlineJobQueue(lambda job_id, attempt: _noop(job_id, attempt)),  # replaced below
+        jobs=InlineJobQueue(_noop),  # replaced below
         carrier_provider=carrier,
         search_providers=providers,
         platform_clients=platform_clients,

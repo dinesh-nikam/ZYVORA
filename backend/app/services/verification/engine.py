@@ -153,7 +153,10 @@ class VerificationEngine:
             platform=platform.key, platform_name=platform.name, kind=ref.kind, handle=ref.handle,
             profile_url=ref.canonical_url, canonical_url=ref.canonical_url,
             evidence=[evidence],
-            stages=[StageResult("final_result", "info", "Generated link; no availability check performed")],
+            stages=[
+                StageResult("platform", "passed", f"{platform.name} {ref.kind}"),
+                StageResult("final_result", "info", "Generated link; no availability check performed"),
+            ],
             limitations=[platform.limitation],
         )
 

@@ -7,7 +7,7 @@ developers and the test-suite can run the full stack without a Redis server;
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from redis.asyncio import Redis
 
@@ -19,5 +19,5 @@ def create_redis(url: str) -> Redis:
         except ImportError as exc:  # pragma: no cover - depends on install profile
             raise RuntimeError("REDIS_URL=memory:// requires the 'fakeredis' dev dependency") from exc
         client: Any = FakeAsyncRedis(decode_responses=True)
-        return client  # type: ignore[no-any-return]
+        return cast(Redis, client)
     return Redis.from_url(url, decode_responses=True, health_check_interval=30, socket_timeout=5)

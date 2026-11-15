@@ -51,7 +51,7 @@ async def run_profile_discovery(ctx: dict[str, Any], job_id: str) -> str:
         raise Retry(defer=outcome.retry_in or runner.backoff(attempt))
     if outcome.status is JobStatus.DEAD_LETTER:
         container: Container = ctx["container"]
-        DEAD_LETTER_JOBS.set(await container.redis.llen(DLQ_KEY))
+        DEAD_LETTER_JOBS.set(await container.redis.llen(DLQ_KEY))  # type: ignore[misc]
     return outcome.status.value
 
 
@@ -61,7 +61,8 @@ async def retention_purge(ctx: dict[str, Any]) -> dict[str, int]:
     return asdict(report)
 
 
-assert run_profile_discovery.__name__ == DISCOVERY_TASK  # task name used by ArqJobQueue
+if run_profile_discovery.__name__ != DISCOVERY_TASK:  # task name used by ArqJobQueue
+    raise RuntimeError("Worker task name mismatch")
 
 
 class WorkerSettings:

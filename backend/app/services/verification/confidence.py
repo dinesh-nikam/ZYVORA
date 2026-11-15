@@ -59,9 +59,8 @@ def level_for(score: int) -> ConfidenceLevel:
 def score(active: set[str]) -> ConfidenceResult:
     factors: list[dict[str, object]] = []
     total = 0
-    for name in FACTOR_POINTS:
+    for name, points in FACTOR_POINTS.items():
         if name in active:
-            points = FACTOR_POINTS[name]
             total += points
             factors.append({"factor": name, "points": points, "description": FACTOR_DESCRIPTIONS[name]})
     unknown = active - FACTOR_POINTS.keys()

@@ -19,7 +19,9 @@ class Role(UUIDPrimaryKey, Base):
 
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     permissions: Mapped[list[str]] = mapped_column(JSONType, nullable=False, default=list)
-    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), default=utcnow, server_default=func.now(), nullable=False
+    )
 
 
 class User(UUIDPrimaryKey, Timestamps, Base):
@@ -49,7 +51,9 @@ class RefreshToken(UUIDPrimaryKey, Base):
     replaced_by_id: Mapped[uuid.UUID | None] = mapped_column()
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
-    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), default=utcnow, server_default=func.now(), nullable=False
+    )
 
     __table_args__ = (
         Index("ix_refresh_tokens_user_id_revoked_at", "user_id", "revoked_at"),
@@ -69,7 +73,9 @@ class ApiKey(UUIDPrimaryKey, Base):
     expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
-    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), default=utcnow, server_default=func.now(), nullable=False
+    )
 
     user: Mapped[User] = relationship(lazy="joined")
 
@@ -85,4 +91,6 @@ class TelegramLink(UUIDPrimaryKey, Base):
         ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
     )
     telegram_user_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), default=utcnow, server_default=func.now(), nullable=False
+    )

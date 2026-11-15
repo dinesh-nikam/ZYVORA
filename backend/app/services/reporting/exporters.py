@@ -179,14 +179,20 @@ def to_pdf(report: InvestigationReport, *, font_path: str | None = None) -> byte
         line("Status", f"{p.verification_status} | confidence {p.confidence_level} ({p.confidence_score}/100)")
         line("Evidence", p.evidence_description)
         for ev in p.evidence[:6]:
-            line(f"  - {ev.discovery_method} ({ev.source_reliability})", f"{ev.source_url} @ {ev.timestamp:%Y-%m-%d %H:%M}Z")
+            line(
+                f"  - {ev.discovery_method} ({ev.source_reliability})",
+                f"{ev.source_url} @ {ev.timestamp:%Y-%m-%d %H:%M}Z",
+            )
         for lim in p.attribution_limitations[:3]:
             line("  Limitation", lim)
         pdf.ln(1)
 
     heading("Sources")
     for src in report.sources[:200]:
-        line(f"{src.discovery_method} / {src.source_reliability}", f"{src.source_url} ({src.timestamp:%Y-%m-%d %H:%M}Z)")
+        line(
+            f"{src.discovery_method} / {src.source_reliability}",
+            f"{src.source_url} ({src.timestamp:%Y-%m-%d %H:%M}Z)",
+        )
 
     heading("Limitations")
     for lim in s.limitations:

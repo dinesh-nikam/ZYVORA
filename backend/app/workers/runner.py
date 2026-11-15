@@ -270,7 +270,7 @@ class DiscoveryJobRunner:
                 job.status = JobStatus.RETRYING.value
         if final:
             DISCOVERY_JOBS.labels(status="dead_letter").inc()
-            await self.c.redis.rpush(DLQ_KEY, str(job_id))
+            await self.c.redis.rpush(DLQ_KEY, str(job_id))  # type: ignore[misc]
             await self.c.events.publish(investigation_id, EventType.INVESTIGATION_FAILED,
                                         {"job_id": str(job_id), "error_code": code, "attempts": attempt})
             return JobOutcome(JobStatus.DEAD_LETTER)

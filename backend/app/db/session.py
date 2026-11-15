@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
@@ -27,7 +28,7 @@ def create_engine(settings: Settings, *, url: str | None = None) -> AsyncEngine:
 
 def _enable_sqlite_fk(engine: Engine) -> None:
     @event.listens_for(engine, "connect")
-    def _fk_pragma(dbapi_connection, _record):  # type: ignore[no-untyped-def]
+    def _fk_pragma(dbapi_connection: Any, _record: Any) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()

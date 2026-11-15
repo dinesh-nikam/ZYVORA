@@ -81,7 +81,7 @@ async def _dlq(requeue: bool) -> None:
     settings = get_settings()
     container = await build_container(settings)
     try:
-        ids = await container.redis.lrange(DLQ_KEY, 0, -1)
+        ids = await container.redis.lrange(DLQ_KEY, 0, -1)  # type: ignore[misc]
         _print(f"{len(ids)} job(s) in dead-letter queue")
         for raw in ids:
             _print(f"  {raw}")
@@ -98,7 +98,7 @@ async def _dlq(requeue: bool) -> None:
                     job.status = JobStatus.QUEUED.value
                     job.error_code = None
                 await container.jobs.enqueue_discovery(job_id)
-                await container.redis.lrem(DLQ_KEY, 0, raw)
+                await container.redis.lrem(DLQ_KEY, 0, raw)  # type: ignore[misc]
                 _print(f"  requeued {raw}")
     finally:
         await container.aclose()

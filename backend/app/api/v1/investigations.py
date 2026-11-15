@@ -148,7 +148,7 @@ async def start_profile_discovery(
                                                  audit_context(request, principal))
     if not created:
         response.headers["Idempotent-Replayed"] = "true"
-    await service.session.refresh(job)
+        await service.session.refresh(job)
     return JobOut.model_validate(job)
 
 

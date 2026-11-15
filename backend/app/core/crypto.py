@@ -50,7 +50,8 @@ class FieldCipher:
 
     @property
     def active_key_id(self) -> str:
-        assert self._active_kid is not None
+        if self._active_kid is None:
+            raise EncryptionError("no active encryption key configured")
         return self._active_kid
 
     def encrypt(self, plaintext: str, *, associated_data: bytes = b"") -> str:

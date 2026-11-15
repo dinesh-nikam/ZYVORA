@@ -288,7 +288,8 @@ class InvestigationService:
         audit.record(self.session, ctx, "profile.verify", "profile", profile.id, status=outcome.status.value)
         await self.session.commit()
         refreshed = await self.profiles.get_owned(profile_id, principal.id)
-        assert refreshed is not None
+        if refreshed is None:
+            raise NotFound("Profile not found")
         return refreshed
 
     async def verify_url(self, principal: Principal, url: str, phone: str | None, ctx: AuditContext,

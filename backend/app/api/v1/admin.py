@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import uuid
 from datetime import datetime
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import text
@@ -32,7 +33,7 @@ router = APIRouter(prefix="/admin", tags=["administration"], responses=ERROR_RES
 VERSION = "1.0.0"
 
 
-def _user_out(u) -> AdminUserOut:  # type: ignore[no-untyped-def]
+def _user_out(u: Any) -> AdminUserOut:
     return AdminUserOut(id=u.id, email=u.email, status=u.status, role=u.role.name, created_at=u.created_at,
                         updated_at=u.updated_at, last_login_at=u.last_login_at, locked_until=u.locked_until)
 
@@ -146,12 +147,12 @@ async def system_health(
     components = await check_components(container)
     dlq = 0
     if components["redis"].status == "ok":
-        dlq = int(await container.redis.llen(DLQ_KEY))
+        dlq = int(await container.redis.llen(DLQ_KEY))  # type: ignore[misc]
     components["search"] = ComponentHealth(
         status="ok" if container.search_providers else "degraded",
         detail=None if container.search_providers else "no public search provider configured",
     )
-    overall = "down" if any(c.status == "down" for c in components.values()) else (
+    overall: Literal["ok", "degraded", "down"] = "down" if any(c.status == "down" for c in components.values()) else (
         "degraded" if any(c.status == "degraded" for c in components.values()) or dlq else "ok")
     return SystemHealthOut(
         status=overall, environment=container.settings.app_env.value, version=VERSION, components=components,

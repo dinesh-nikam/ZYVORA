@@ -17,9 +17,9 @@ _CACHE_TTL = 3600.0
 
 
 class RobotsPolicy:
-    def __init__(self, http: SafeHttpClient, user_agent_token: str = "PhoneIntelBot") -> None:
+    def __init__(self, http: SafeHttpClient, user_agent_name: str = "PhoneIntelBot") -> None:
         self._http = http
-        self._ua = user_agent_token
+        self._ua = user_agent_name
         self._cache: dict[str, tuple[float, RobotFileParser | None, bool]] = {}
 
     async def allowed(self, url: str, *, allowed_domains: frozenset[str]) -> bool:

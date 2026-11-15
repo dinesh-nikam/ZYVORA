@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, Request, status
 
 from app.api.deps import audit_context, get_auth_service, get_principal, ip_rate_limit
@@ -15,7 +17,7 @@ def _tokens(pair: TokenPair) -> TokenOut:
                     refresh_token=pair.refresh_token, refresh_expires_in=pair.refresh_expires_in)
 
 
-def user_out(user) -> UserOut:  # type: ignore[no-untyped-def]
+def user_out(user: Any) -> UserOut:
     return UserOut(id=user.id, email=user.email, status=user.status, role=user.role.name,
                    created_at=user.created_at, last_login_at=user.last_login_at)
 

@@ -301,7 +301,10 @@ class SafeHttpClient:
         backend = GuardedNetworkBackend(self._resolver, self._allow_private)
         self._client = httpx.AsyncClient(
             transport=transport or GuardedTransport(backend),
-            timeout=httpx.Timeout(settings.outbound_timeout_seconds, connect=min(5.0, settings.outbound_timeout_seconds)),
+            timeout=httpx.Timeout(
+                settings.outbound_timeout_seconds,
+                connect=min(5.0, settings.outbound_timeout_seconds),
+            ),
             follow_redirects=False,
             trust_env=False,  # never route through env proxies (would bypass IP validation)
             headers={"User-Agent": settings.outbound_user_agent, "Accept-Language": "en"},

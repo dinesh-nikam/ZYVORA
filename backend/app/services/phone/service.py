@@ -149,7 +149,7 @@ class PhoneIntelService:
             international=phonenumbers.format_number(number, PhoneNumberFormat.INTERNATIONAL),
             national=phonenumbers.format_number(number, PhoneNumberFormat.NATIONAL),
             rfc3966=phonenumbers.format_number(number, PhoneNumberFormat.RFC3966),
-            country_code=number.country_code,
+            country_code=number.country_code or 0,
             region_code=region_code if region_code not in (None, "ZZ") else None,
             country_name=country_name,
             region_description=description or None,

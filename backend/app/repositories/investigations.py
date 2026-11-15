@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import uuid
 from datetime import datetime
 
@@ -73,7 +74,7 @@ class InvestigationRepository:
         }, "-created_at")
         return await paginate(self.session, stmt, page, page_size)
 
-    async def ids_for_owner(self, owner_id: uuid.UUID) -> list[uuid.UUID]:
+    async def ids_for_owner(self, owner_id: uuid.UUID) -> builtins.list[uuid.UUID]:
         stmt = select(Investigation.id).where(Investigation.user_id == owner_id, Investigation.deleted_at.is_(None))
         return list((await self.session.execute(stmt)).scalars().all())
 
@@ -135,7 +136,7 @@ class ProfileRepository:
         }, "-confidence")
         return await paginate(self.session, stmt, page, page_size)
 
-    async def all_for(self, investigation_id: uuid.UUID) -> list[DiscoveredProfile]:
+    async def all_for(self, investigation_id: uuid.UUID) -> builtins.list[DiscoveredProfile]:
         stmt = (select(DiscoveredProfile).where(DiscoveredProfile.investigation_id == investigation_id)
                 .options(selectinload(DiscoveredProfile.evidence))
                 .order_by(DiscoveredProfile.confidence_score.desc(), DiscoveredProfile.platform))
@@ -146,7 +147,7 @@ class ProfileRepository:
         await self.session.flush()
         return profile
 
-    async def replace_evidence(self, profile: DiscoveredProfile, evidence: list[EvidenceSource]) -> None:
+    async def replace_evidence(self, profile: DiscoveredProfile, evidence: builtins.list[EvidenceSource]) -> None:
         await self.session.execute(delete(EvidenceSource).where(EvidenceSource.discovered_profile_id == profile.id))
         for item in evidence:
             item.discovered_profile_id = profile.id

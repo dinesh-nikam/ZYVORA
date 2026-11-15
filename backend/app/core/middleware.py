@@ -25,10 +25,13 @@ SECURITY_HEADERS: list[tuple[bytes, bytes]] = [
     (b"cross-origin-resource-policy", b"same-origin"),
 ]
 _API_CSP = (b"content-security-policy", b"default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
-_DOCS_CSP = (b"content-security-policy",
-             b"default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-             b"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com; "
-             b"frame-ancestors 'none'")
+_DOCS_CSP = (
+    b"content-security-policy",
+    b"default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    b"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    b"img-src 'self' data: https://fastapi.tiangolo.com; "
+    b"frame-ancestors 'none'",
+)
 
 
 class RequestContextMiddleware:
@@ -122,7 +125,11 @@ class HttpsEnforcementMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] not in ("http", "websocket") or scope.get("scheme") in ("https", "wss")                 or scope.get("path", "").startswith(self._EXEMPT):
+        if (
+            scope["type"] not in ("http", "websocket")
+            or scope.get("scheme") in ("https", "wss")
+            or scope.get("path", "").startswith(self._EXEMPT)
+        ):
             await self.app(scope, receive, send)
             return
         if scope["type"] == "websocket":

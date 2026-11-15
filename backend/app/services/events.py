@@ -54,7 +54,7 @@ class EventBus:
         return event
 
     async def history(self, investigation_id: uuid.UUID) -> list[dict[str, Any]]:
-        raw = await self._redis.lrange(f"{self._channel(investigation_id)}:history", 0, -1)
+        raw = await self._redis.lrange(f"{self._channel(investigation_id)}:history", 0, -1)  # type: ignore[misc]
         return [json.loads(item) for item in raw]
 
     async def subscribe(self, investigation_id: uuid.UUID) -> AsyncIterator[dict[str, Any]]:

@@ -41,7 +41,7 @@ def build_variants(e164: str) -> NumberVariants:
     query_forms = tuple(dict.fromkeys([f"+{cc}{nsn}", international, nsn if len(nsn) >= 8 else international]))
     return NumberVariants(
         e164=f"+{cc}{nsn}",
-        country_code=number.country_code,
+        country_code=number.country_code or 0,
         nsn=nsn,
         region=region if region not in (None, "ZZ") else None,
         digit_forms=frozenset(d for d in digit_forms if len(d) >= 7),
@@ -67,7 +67,4 @@ def text_references_number(text: str | None, variants: NumberVariants) -> bool:
         digits = re.sub(r"\D", "", run)
         if digits in variants.digit_forms:
             return True
-    for embedded in re.findall(r"(?<!\d)\d{7,15}(?!\d)", sample):
-        if embedded in variants.digit_forms:
-            return True
-    return False
+    return any(embedded in variants.digit_forms for embedded in re.findall(r"(?<!\d)\d{7,15}(?!\d)", sample))

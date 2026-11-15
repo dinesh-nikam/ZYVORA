@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import asdict, dataclass
 from datetime import timedelta
+from typing import Any
 
 from sqlalchemy import delete, or_, select
 
@@ -27,7 +28,7 @@ class PurgeReport:
     audit_logs_removed: int = 0
 
 
-async def purge_expired(sessionmaker, settings: Settings) -> PurgeReport:  # type: ignore[no-untyped-def]
+async def purge_expired(sessionmaker: Any, settings: Settings) -> PurgeReport:
     report = PurgeReport()
     now = utcnow()
     async with transaction(sessionmaker) as session:

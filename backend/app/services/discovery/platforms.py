@@ -277,8 +277,10 @@ PLATFORMS: dict[str, Platform] = {p.key: p for p in (
     Platform("linkedin", "LinkedIn", ("linkedin.com",), FetchPolicy.NONE, ("linkedin.com/in", "linkedin.com/company"),
              _linkedin, _NO_LIVE),
     Platform("x", "X (Twitter)", ("x.com", "twitter.com"), FetchPolicy.NONE, ("x.com", "twitter.com"), _x, _NO_LIVE),
-    Platform("youtube", "YouTube", ("youtube.com",), FetchPolicy.OFFICIAL_API, ("youtube.com",), _youtube,
-             "YouTube channels are checked only through the official YouTube Data API v3 when an API key is configured."),
+    Platform(
+        "youtube", "YouTube", ("youtube.com",), FetchPolicy.OFFICIAL_API, ("youtube.com",), _youtube,
+        "YouTube channels are checked only through the official YouTube Data API v3 when an API key is configured.",
+    ),
     Platform("tiktok", "TikTok", ("tiktok.com",), FetchPolicy.NONE, ("tiktok.com",), _tiktok, _NO_LIVE),
     Platform("reddit", "Reddit", ("reddit.com",), FetchPolicy.OFFICIAL_API, ("reddit.com/user",), _reddit,
              "Reddit users are checked only through the official OAuth API when client credentials are configured."),

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ipaddress
 from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import cast
 
 from fastapi import Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +21,7 @@ from app.services.investigations import InvestigationService
 
 
 def get_container(request: Request) -> Container:
-    return request.app.state.container  # type: ignore[no-any-return]
+    return cast(Container, request.app.state.container)
 
 
 async def get_session(container: Container = Depends(get_container)) -> AsyncIterator[AsyncSession]:

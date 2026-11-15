@@ -19,7 +19,9 @@ class AuditLog(UUIDPrimaryKey, Base):
     action: Mapped[str] = mapped_column(String(64), nullable=False)
     resource_type: Mapped[str] = mapped_column(String(48), nullable=False)
     resource_id: Mapped[str | None] = mapped_column(String(64))
-    timestamp: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, server_default=func.now(), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(
+        UTCDateTime(), default=utcnow, server_default=func.now(), nullable=False
+    )
     ip_address: Mapped[str | None] = mapped_column(String(45))
     # ``metadata`` is reserved by SQLAlchemy's declarative API.
     meta: Mapped[dict[str, Any]] = mapped_column("metadata", JSONType, nullable=False, default=dict)
