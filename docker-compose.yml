@@ -1,0 +1,111 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: phoneintel-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-phoneintel}
+      POSTGRES_USER: ${POSTGRES_USER:-phoneintel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-phoneintel_secure_password_dev}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-phoneintel} -d ${POSTGRES_DB:-phoneintel}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: phoneintel-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile.backend
+    container_name: phoneintel-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      SECRET_KEY: ${SECRET_KEY:-insecure_placeholder_must_be_overridden_in_production_32chars!}
+      BLIND_INDEX_KEY: ${BLIND_INDEX_KEY:-insecure_placeholder_must_be_overridden_in_production_32chars!}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-phoneintel}:${POSTGRES_PASSWORD:-phoneintel_secure_password_dev}@postgres:5432/${POSTGRES_DB:-phoneintel}
+      REDIS_URL: redis://redis:6379/0
+      JOB_BACKEND: arq
+      FORCE_HTTPS: ${FORCE_HTTPS:-false}
+      ENABLE_DOCS: ${ENABLE_DOCS:-true}
+      METRICS_ENABLED: "true"
+      LOG_JSON: "true"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile.worker
+    container_name: phoneintel-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      SECRET_KEY: ${SECRET_KEY:-insecure_placeholder_must_be_overridden_in_production_32chars!}
+      BLIND_INDEX_KEY: ${BLIND_INDEX_KEY:-insecure_placeholder_must_be_overridden_in_production_32chars!}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-phoneintel}:${POSTGRES_PASSWORD:-phoneintel_secure_password_dev}@postgres:5432/${POSTGRES_DB:-phoneintel}
+      REDIS_URL: redis://redis:6379/0
+      JOB_BACKEND: arq
+
+  bot:
+    build:
+      context: .
+      dockerfile: infrastructure/Dockerfile.bot
+    container_name: phoneintel-bot
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_URL: http://api:8000
+      BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      SERVICE_API_KEY: ${TELEGRAM_SERVICE_API_KEY:-}
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: phoneintel-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:

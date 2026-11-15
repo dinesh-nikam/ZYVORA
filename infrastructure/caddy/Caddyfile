@@ -1,0 +1,25 @@
+# Caddy Reverse Proxy Configuration for PHONEINTEL
+{
+    email admin@example.org
+    auto_https off
+}
+
+:80 {
+    encode gzip zstd
+
+    # Security Headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()"
+    }
+
+    # Proxy API and Docs
+    reverse_proxy api:8000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

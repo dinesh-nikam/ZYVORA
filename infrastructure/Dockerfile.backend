@@ -1,0 +1,61 @@
+# Multi-stage production Dockerfile for PHONEINTEL Backend API
+FROM python:3.12-slim AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast, reliable dependency installation
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+COPY backend/pyproject.toml ./backend/
+COPY cli/pyproject.toml ./cli/
+COPY telegram_bot/pyproject.toml ./telegram_bot/
+COPY pyproject.toml ./
+
+RUN uv venv /opt/venv
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:${PATH}"
+
+RUN cd backend && uv pip install -e .
+
+# Runtime image
+FROM python:3.12-slim AS runner
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:${PATH}"
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root service user
+RUN useradd -u 10001 -m -s /bin/bash phoneintel
+
+COPY --from=builder /opt/venv /opt/venv
+COPY backend/alembic.ini /app/
+COPY backend/migrations /app/migrations
+COPY backend/app /app/app
+
+RUN chown -R phoneintel:phoneintel /app
+USER phoneintel
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+ENTRYPOINT ["uvicorn", "app.main:app_factory", "--factory", "--host", "0.0.0.0", "--port", "8000"]
