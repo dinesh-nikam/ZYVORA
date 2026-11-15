@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>PHONEINTEL report {{ r.investigation_reference }}</title>
+<style>
+  :root { --fg:#1b1f24; --muted:#5b6470; --line:#d9dee5; --bg:#ffffff; --accent:#1d3d7a; }
+  body { font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); margin: 0; padding: 24px; }
+  main { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 16px; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-top: 28px; }
+  table { border-collapse: collapse; width: 100%; } th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; width: 220px; }
+  .muted { color: var(--muted); } .url { word-break: break-all; font-family: ui-monospace, monospace; font-size: 12px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; border: 1px solid var(--line); }
+  .VERIFIED_PUBLIC_REFERENCE { background:#e3f5e6; border-color:#8fcf9a; } .PUBLIC_CANDIDATE { background:#fff5d6; border-color:#e7c766; }
+  .NOT_FOUND, .ERROR { background:#fde7e7; border-color:#e9a0a0; } .RESTRICTED, .INACCESSIBLE { background:#eef0f4; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+  ul { padding-left: 20px; } .small { font-size: 12px; }
+</style>
+</head>
+<body><main>
+<h1>PHONEINTEL Investigation Report</h1>
+<div class="muted">{{ r.investigation_reference }} &middot; generated {{ r.generated_at.strftime('%Y-%m-%d %H:%M UTC') }} &middot; status {{ r.investigation_status }}</div>
+
+<h2>Investigation</h2>
+<table>
+<tr><th>Authorization basis</th><td>{{ r.authorization_basis }}</td></tr>
+<tr><th>Purpose</th><td>{{ r.purpose or '-' }}</td></tr>
+<tr><th>Created</th><td>{{ r.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</td></tr>
+<tr><th>Completed</th><td>{{ r.completed_at.strftime('%Y-%m-%d %H:%M UTC') if r.completed_at else '-' }}</td></tr>
+</table>
+
+<h2>Phone intelligence</h2>
+{% set ph = r.phone_intelligence %}
+<table>
+<tr><th>Normalized number</th><td>{{ ph.normalized_number or '-' }}</td></tr>
+<tr><th>Country code</th><td>{{ ph.country_code or '-' }}</td></tr>
+<tr><th>Country</th><td>{{ ph.country or '-' }} {% if ph.region_code %}({{ ph.region_code }}){% endif %}</td></tr>
+<tr><th>Number type</th><td>{{ ph.number_type or '-' }}</td></tr>
+<tr><th>Validation status</th><td>{{ ph.validation_status or '-' }}</td></tr>
+<tr><th>Carrier (original allocation)</th><td>{{ ph.carrier or '-' }}</td></tr>
+<tr><th>Metadata provider</th><td class="small">{{ ph.metadata_provider or '-' }}</td></tr>
+</table>
+
+<h2>Investigation summary</h2>
+{% set s = r.summary %}
+<table>
+<tr><th>Discovered URLs</th><td>{{ s.discovered_urls }}</td></tr>
+<tr><th>Verified public references</th><td>{{ s.verified_public_references }}</td></tr>
+<tr><th>Public candidates</th><td>{{ s.public_candidates }}</td></tr>
+<tr><th>Unverified</th><td>{{ s.unverified }}</td></tr>
+<tr><th>Inaccessible / restricted / not found</th><td>{{ s.inaccessible }} / {{ s.restricted }} / {{ s.not_found }}</td></tr>
+</table>
+
+<h2>Social profile discovery</h2>
+{% if not r.profiles %}<p class="muted">No profile links were discovered from permitted public sources.</p>{% endif %}
+{% for p in r.profiles %}
+<div class="card">
+  <div><strong>{{ p.platform }}</strong> &middot; <span class="badge {{ p.verification_status }}">{{ p.verification_status }}</span>
+  &middot; confidence <strong>{{ p.confidence_level }}</strong> ({{ p.confidence_score }}/100)</div>
+  <div class="url">{{ p.canonical_url }}</div>
+  <p>{{ p.evidence_description }}</p>
+  {% if p.confidence_factors %}<div class="small muted">Confidence factors:</div><ul class="small">
+  {% for f in p.confidence_factors %}<li>{{ f.description }} ({{ '%+d' % f.points }})</li>{% endfor %}</ul>{% endif %}
+  <div class="small muted">Evidence:</div>
+  <ul class="small">{% for e in p.evidence %}
+    <li>{{ e.discovery_method }} &middot; {{ e.source_reliability }} &middot; {{ e.timestamp.strftime('%Y-%m-%d %H:%M UTC') }}<br>
+      <span class="url">{{ e.source_url }}</span><br>{{ e.summary }}</li>{% endfor %}</ul>
+  {% if p.attribution_limitations %}<div class="small muted">Attribution limitations:</div>
+  <ul class="small">{% for l in p.attribution_limitations %}<li>{{ l }}</li>{% endfor %}</ul>{% endif %}
+</div>
+{% endfor %}
+
+<h2>Source information</h2>
+<table class="small">
+<tr><th>Source URL</th><th>Method</th><th>Timestamp</th><th>Reliability</th></tr>
+{% for src in r.sources %}<tr><td class="url">{{ src.source_url }}</td><td>{{ src.discovery_method }}</td><td>{{ src.timestamp.strftime('%Y-%m-%d %H:%M UTC') }}</td><td>{{ src.source_reliability }}</td></tr>{% endfor %}
+</table>
+
+<h2>Limitations</h2>
+<ul>{% for l in s.limitations %}<li>{{ l }}</li>{% endfor %}</ul>
+<h2>Methodology</h2>
+<ul class="small">{% for m in r.methodology %}<li>{{ m }}</li>{% endfor %}</ul>
+<p class="small muted">{{ r.disclaimer }}</p>
+</main></body>
+</html>

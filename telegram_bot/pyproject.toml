@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "phoneintel-bot"
+version = "1.0.0"
+description = "PHONEINTEL Telegram bot (aiogram) - thin client over the PHONEINTEL REST API"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+dependencies = [
+    "aiogram>=3.15",
+    "httpx>=0.28",
+    "pydantic-settings>=2.6",
+    "redis>=5.2",
+]
+
+[project.scripts]
+phoneintel-bot = "phoneintel_bot.main:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["phoneintel_bot"]

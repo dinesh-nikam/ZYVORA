@@ -1,0 +1,50 @@
+# Workspace-level tooling configuration (pytest, ruff, mypy).
+# Each deployable unit (backend/, cli/, telegram_bot/) has its own pyproject.toml.
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests", "cli/tests", "telegram_bot/tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra --strict-markers --import-mode=importlib -m 'not live'"
+pythonpath = ["backend"]
+markers = [
+    "live: performs real outbound requests to public platform APIs (opt-in: -m live)",
+    "postgres: requires a real PostgreSQL server (TEST_DATABASE_URL)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:aiogram.*",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["dashboard", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "RUF", "SIM", "PL"]
+ignore = [
+    "PLR0913",  # many-argument constructors are intentional for DI
+    "PLR2004",  # magic values in tests and HTTP status checks
+    "PLR0911",
+    "PLR0912",
+    "PLR0915",
+    "RUF012",
+    "S105",     # false positives on token-type constants
+    "B008",     # FastAPI Depends() in defaults
+    "PLR0917",  # DI constructors take many collaborators
+    "ASYNC109", # httpcore backend interface requires a timeout parameter
+    "UP046",    # explicit Generic[T] kept for pydantic compatibility
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "S106", "S105", "S311", "PLC0415", "S603", "S607"]
+"conftest.py" = ["S101", "S106", "PLC0415"]
+"backend/migrations/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+exclude = ["tests/", "migrations/"]
