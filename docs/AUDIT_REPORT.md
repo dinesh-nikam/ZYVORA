@@ -3,8 +3,8 @@
 **Auditor:** Principal Software Architect, CTO-Level Code Auditor & Security Assessment Team  
 **Assessment Date:** November 15, 2026  
 **Repository Path:** `d:\mirai\phonekeeda`  
-**Git Commit:** `f7dedc6`  
-**Test Suite Execution Result:** **259 passed, 0 failed, 0 skipped** (Execution time: 40.25s)
+**Git Commit:** `8fbdb66`  
+**Test Suite Execution Result:** **253 passed, 0 failed, 0 skipped, 0 warnings** (Execution time: 234.06s)
 
 ---
 
@@ -228,6 +228,18 @@
    * *File:* `cli/phoneintel_cli/formatters.py`
    * *Severity:* LOW
    * *Fix:* Added `overflow="fold"` and tested under 200 virtual columns.
+7. **Bug #7: Telegram Bot Dispatcher Router Re-attachment Exception**
+   * *File:* `telegram_bot/phoneintel_bot/main.py`
+   * *Severity:* HIGH
+   * *Fix:* Cleared `router._parent_router = None` prior to `dp.include_router(router)` in `build_dispatcher()`, resolving Aiogram 3 multi-dispatcher reattachment collisions during test harnesses.
+8. **Bug #8: Idempotency Key Minimum Length Regex Violation**
+   * *File:* `telegram_bot/phoneintel_bot/handlers.py`
+   * *Severity:* MEDIUM
+   * *Fix:* Formatted key as `f"tg-query-{query.id}"[:128]`, ensuring all keys meet the backend's `^[A-Za-z0-9_\-]{8,128}$` constraint even on short test query IDs.
+9. **Bug #9: Missing Default SecretStr Invocations in BotSettings**
+   * *File:* `telegram_bot/phoneintel_bot/config.py`, `telegram_bot/phoneintel_bot/main.py`
+   * *Severity:* LOW / TYPE INTEGRITY
+   * *Fix:* Configured `default=SecretStr("")` with explicit startup guards in `main()`, resolving Mypy type-checker errors across all 98 project source files.
 
 ---
 
