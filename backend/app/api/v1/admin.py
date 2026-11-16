@@ -34,8 +34,16 @@ VERSION = "1.0.0"
 
 
 def _user_out(u: Any) -> AdminUserOut:
-    return AdminUserOut(id=u.id, email=u.email, status=u.status, role=u.role.name, created_at=u.created_at,
-                        updated_at=u.updated_at, last_login_at=u.last_login_at, locked_until=u.locked_until)
+    return AdminUserOut(
+        id=u.id,
+        email=u.email,
+        status=u.status,
+        role=u.role.name,
+        created_at=u.created_at,
+        updated_at=u.updated_at,
+        last_login_at=u.last_login_at,
+        locked_until=u.locked_until,
+    )
 
 
 @router.get("/users", response_model=PageOut[AdminUserOut])
@@ -50,9 +58,14 @@ async def list_users(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
 ) -> PageOut[AdminUserOut]:
-    result = await UserRepository(session).list(status=status_filter.value if status_filter else None, role=role,
-                                                email_contains=email_contains, sort=sort, page=page,
-                                                page_size=page_size)
+    result = await UserRepository(session).list(
+        status=status_filter.value if status_filter else None,
+        role=role,
+        email_contains=email_contains,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+    )
     audit.record(session, audit_context(request, principal), "admin.users.list", "user", None)
     await session.commit()
     return PageOut(items=[_user_out(u) for u in result.items], total=result.total, page=page, page_size=page_size)
@@ -110,14 +123,32 @@ async def list_audit_logs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
 ) -> PageOut[AuditLogOut]:
-    result = await AuditRepository(session).list(actor_id=actor_id, action=action, resource_type=resource_type,
-                                                 resource_id=resource_id, since=since, until=until, sort=sort,
-                                                 page=page, page_size=page_size)
+    result = await AuditRepository(session).list(
+        actor_id=actor_id,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        since=since,
+        until=until,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+    )
     audit.record(session, audit_context(request, principal), "admin.audit.read", "audit_log", None)
     await session.commit()
-    items = [AuditLogOut(id=a.id, actor_id=a.actor_id, action=a.action, resource_type=a.resource_type,
-                         resource_id=a.resource_id, timestamp=a.timestamp, ip_address=a.ip_address,
-                         metadata=a.meta) for a in result.items]
+    items = [
+        AuditLogOut(
+            id=a.id,
+            actor_id=a.actor_id,
+            action=a.action,
+            resource_type=a.resource_type,
+            resource_id=a.resource_id,
+            timestamp=a.timestamp,
+            ip_address=a.ip_address,
+            metadata=a.meta,
+        )
+        for a in result.items
+    ]
     return PageOut(items=items, total=result.total, page=page, page_size=page_size)
 
 
@@ -152,10 +183,18 @@ async def system_health(
         status="ok" if container.search_providers else "degraded",
         detail=None if container.search_providers else "no public search provider configured",
     )
-    overall: Literal["ok", "degraded", "down"] = "down" if any(c.status == "down" for c in components.values()) else (
-        "degraded" if any(c.status == "degraded" for c in components.values()) or dlq else "ok")
+    overall: Literal["ok", "degraded", "down"] = (
+        "down"
+        if any(c.status == "down" for c in components.values())
+        else ("degraded" if any(c.status == "degraded" for c in components.values()) or dlq else "ok")
+    )
     return SystemHealthOut(
-        status=overall, environment=container.settings.app_env.value, version=VERSION, components=components,
+        status=overall,
+        environment=container.settings.app_env.value,
+        version=VERSION,
+        components=components,
         search_providers=[p.name for p in container.search_providers],
-        platform_api_clients=sorted(container.platform_clients), dead_letter_jobs=dlq, checked_at=utcnow(),
+        platform_api_clients=sorted(container.platform_clients),
+        dead_letter_jobs=dlq,
+        checked_at=utcnow(),
     )

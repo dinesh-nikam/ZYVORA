@@ -4,9 +4,9 @@ import uuid
 
 import httpx
 import pytest
+from app.services.container import Container
 from sqlalchemy import text
 
-from app.services.container import Container
 from tests.conftest import PHONE, UserCtx, create_investigation, register_and_login
 
 

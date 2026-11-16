@@ -74,22 +74,43 @@ class ReportBuilder:
             evidence = []
             for ev in row.evidence:
                 method = _METHOD.get(ev.source_type, ev.source_type)
-                evidence.append(ReportEvidence(
-                    source_url=ev.source_url, discovery_method=method, source_name=ev.source_name,
-                    source_reliability=ev.source_reliability, summary=ev.evidence_summary,
-                    phone_reference_found=ev.phone_reference_found, timestamp=ev.collected_at,
-                ))
-                sources.setdefault((ev.source_url, method), ReportSource(
-                    source_url=ev.source_url, discovery_method=method, source_name=ev.source_name,
-                    timestamp=ev.collected_at, source_reliability=ev.source_reliability,
-                ))
-            profiles.append(ReportProfile(
-                platform=row.platform, profile_url=row.profile_url, canonical_url=row.canonical_url,
-                discovery_source=row.discovery_source, evidence_description=row.evidence_description,
-                verification_status=row.verification_status, confidence_level=row.confidence_level,
-                confidence_score=row.confidence_score, confidence_factors=row.confidence_factors,
-                attribution_limitations=row.limitations, verified_at=row.verified_at, evidence=evidence,
-            ))
+                evidence.append(
+                    ReportEvidence(
+                        source_url=ev.source_url,
+                        discovery_method=method,
+                        source_name=ev.source_name,
+                        source_reliability=ev.source_reliability,
+                        summary=ev.evidence_summary,
+                        phone_reference_found=ev.phone_reference_found,
+                        timestamp=ev.collected_at,
+                    )
+                )
+                sources.setdefault(
+                    (ev.source_url, method),
+                    ReportSource(
+                        source_url=ev.source_url,
+                        discovery_method=method,
+                        source_name=ev.source_name,
+                        timestamp=ev.collected_at,
+                        source_reliability=ev.source_reliability,
+                    ),
+                )
+            profiles.append(
+                ReportProfile(
+                    platform=row.platform,
+                    profile_url=row.profile_url,
+                    canonical_url=row.canonical_url,
+                    discovery_source=row.discovery_source,
+                    evidence_description=row.evidence_description,
+                    verification_status=row.verification_status,
+                    confidence_level=row.confidence_level,
+                    confidence_score=row.confidence_score,
+                    confidence_factors=row.confidence_factors,
+                    attribution_limitations=row.limitations,
+                    verified_at=row.verified_at,
+                    evidence=evidence,
+                )
+            )
         stored = investigation.summary or {}
         limitations = list(dict.fromkeys([*PHONE_LIMITATIONS, *stored.get("limitations", [])]))
         if investigation.status != "completed":

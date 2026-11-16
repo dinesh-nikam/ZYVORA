@@ -16,9 +16,9 @@ import httpx
 
 
 class FetchPolicy(StrEnum):
-    OFFICIAL_API = "official_api"   # verified through a documented, official API
-    PUBLIC_PAGE = "public_page"     # public, robots-permitted preview page
-    NONE = "none"                   # no live checks (ToS / login walls); index evidence only
+    OFFICIAL_API = "official_api"  # verified through a documented, official API
+    PUBLIC_PAGE = "public_page"  # public, robots-permitted preview page
+    NONE = "none"  # no live checks (ToS / login walls); index evidence only
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,8 +48,10 @@ class Platform:
         return self.parser(segments, url)
 
 
-_NO_LIVE = ("Live profile checks are not performed for this platform (automated access is restricted by its terms "
-            "and no official lookup API is configured); status relies on public search-index evidence only.")
+_NO_LIVE = (
+    "Live profile checks are not performed for this platform (automated access is restricted by its terms "
+    "and no official lookup API is configured); status relies on public search-index evidence only."
+)
 
 
 def _ref(platform: str, kind: str, handle: str | None, url: str) -> ProfileRef:
@@ -58,10 +60,30 @@ def _ref(platform: str, kind: str, handle: str | None, url: str) -> ProfileRef:
 
 # --------------------------------------------------------------------- parsers
 _TG_HANDLE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{3,31}$")
-_TG_RESERVED = frozenset({
-    "addstickers", "addemoji", "share", "proxy", "socks", "iv", "login", "setlanguage", "addtheme", "bg",
-    "confirmphone", "invoice", "boost", "contact", "addlist", "joinchat", "k", "a", "z", "web",
-})
+_TG_RESERVED = frozenset(
+    {
+        "addstickers",
+        "addemoji",
+        "share",
+        "proxy",
+        "socks",
+        "iv",
+        "login",
+        "setlanguage",
+        "addtheme",
+        "bg",
+        "confirmphone",
+        "invoice",
+        "boost",
+        "contact",
+        "addlist",
+        "joinchat",
+        "k",
+        "a",
+        "z",
+        "web",
+    }
+)
 
 
 def _telegram(seg: list[str], url: httpx.URL) -> ProfileRef | None:
@@ -103,11 +125,39 @@ def _whatsapp(seg: list[str], url: httpx.URL) -> ProfileRef | None:
     return None
 
 
-_IG_RESERVED = frozenset({
-    "p", "reel", "reels", "explore", "accounts", "stories", "tv", "direct", "about", "legal", "developer", "web",
-    "challenge", "emails", "press", "api", "static", "graphql", "privacy", "terms", "oauth", "session", "ar",
-    "create", "lite", "directory", "topics", "locations", "nametag",
-})
+_IG_RESERVED = frozenset(
+    {
+        "p",
+        "reel",
+        "reels",
+        "explore",
+        "accounts",
+        "stories",
+        "tv",
+        "direct",
+        "about",
+        "legal",
+        "developer",
+        "web",
+        "challenge",
+        "emails",
+        "press",
+        "api",
+        "static",
+        "graphql",
+        "privacy",
+        "terms",
+        "oauth",
+        "session",
+        "ar",
+        "create",
+        "lite",
+        "directory",
+        "topics",
+        "locations",
+        "nametag",
+    }
+)
 _IG_HANDLE = re.compile(r"^(?!.*\.\.)(?!\.)[A-Za-z0-9._]{1,30}(?<!\.)$")
 
 
@@ -118,14 +168,68 @@ def _instagram(seg: list[str], url: httpx.URL) -> ProfileRef | None:
     return _ref("instagram", "profile", handle, f"https://www.instagram.com/{handle}/")
 
 
-_FB_RESERVED = frozenset({
-    "groups", "events", "watch", "marketplace", "login", "login.php", "help", "sharer", "sharer.php", "share",
-    "story.php", "photo.php", "photo", "photos", "permalink.php", "hashtag", "policies", "privacy", "gaming",
-    "business", "ads", "settings", "notifications", "messages", "friends", "search", "home.php", "recover",
-    "reel", "reels", "videos", "l.php", "dialog", "plugins", "legal", "terms", "about", "careers",
-    "fundraisers", "bookmarks", "media", "stories", "checkpoint", "tr", "posts", "public", "places", "pages",
-    "people", "profile.php", "signup", "r.php", "reg", "help.php", "mobile", "directory", "live", "lite",
-})
+_FB_RESERVED = frozenset(
+    {
+        "groups",
+        "events",
+        "watch",
+        "marketplace",
+        "login",
+        "login.php",
+        "help",
+        "sharer",
+        "sharer.php",
+        "share",
+        "story.php",
+        "photo.php",
+        "photo",
+        "photos",
+        "permalink.php",
+        "hashtag",
+        "policies",
+        "privacy",
+        "gaming",
+        "business",
+        "ads",
+        "settings",
+        "notifications",
+        "messages",
+        "friends",
+        "search",
+        "home.php",
+        "recover",
+        "reel",
+        "reels",
+        "videos",
+        "l.php",
+        "dialog",
+        "plugins",
+        "legal",
+        "terms",
+        "about",
+        "careers",
+        "fundraisers",
+        "bookmarks",
+        "media",
+        "stories",
+        "checkpoint",
+        "tr",
+        "posts",
+        "public",
+        "places",
+        "pages",
+        "people",
+        "profile.php",
+        "signup",
+        "r.php",
+        "reg",
+        "help.php",
+        "mobile",
+        "directory",
+        "live",
+        "lite",
+    }
+)
 
 
 def _facebook(seg: list[str], url: httpx.URL) -> ProfileRef | None:
@@ -137,8 +241,12 @@ def _facebook(seg: list[str], url: httpx.URL) -> ProfileRef | None:
             return _ref("facebook", "profile", pid, f"https://www.facebook.com/profile.php?id={pid}")
         return None
     if seg[0] in ("people", "pages") and len(seg) >= 3 and seg[2].isdigit():
-        return _ref("facebook", "profile" if seg[0] == "people" else "page", seg[2],
-                    f"https://www.facebook.com/profile.php?id={seg[2]}")
+        return _ref(
+            "facebook",
+            "profile" if seg[0] == "people" else "page",
+            seg[2],
+            f"https://www.facebook.com/profile.php?id={seg[2]}",
+        )
     if seg[0].lower() in _FB_RESERVED:
         return None
     if re.fullmatch(r"[A-Za-z0-9.]{5,50}", seg[0]):
@@ -162,11 +270,40 @@ def _linkedin(seg: list[str], url: httpx.URL) -> ProfileRef | None:
     return _ref("linkedin", kind, slug, f"https://www.linkedin.com/{section}/{slug}/")
 
 
-_X_RESERVED = frozenset({
-    "home", "explore", "search", "i", "intent", "share", "hashtag", "settings", "login", "signup", "tos",
-    "privacy", "notifications", "messages", "compose", "logout", "account", "about", "download", "jobs",
-    "lists", "communities", "premium", "verified-choose", "rules", "help", "en", "web", "oauth", "who_to_follow",
-})
+_X_RESERVED = frozenset(
+    {
+        "home",
+        "explore",
+        "search",
+        "i",
+        "intent",
+        "share",
+        "hashtag",
+        "settings",
+        "login",
+        "signup",
+        "tos",
+        "privacy",
+        "notifications",
+        "messages",
+        "compose",
+        "logout",
+        "account",
+        "about",
+        "download",
+        "jobs",
+        "lists",
+        "communities",
+        "premium",
+        "verified-choose",
+        "rules",
+        "help",
+        "en",
+        "web",
+        "oauth",
+        "who_to_follow",
+    }
+)
 
 
 def _x(seg: list[str], url: httpx.URL) -> ProfileRef | None:
@@ -185,8 +322,7 @@ def _youtube(seg: list[str], url: httpx.URL) -> ProfileRef | None:
     if seg[0] == "channel" and len(seg) >= 2 and re.fullmatch(r"UC[A-Za-z0-9_\-]{22}", seg[1]):
         return _ref("youtube", "channel_id", seg[1], f"https://www.youtube.com/channel/{seg[1]}")
     if seg[0] in ("c", "user") and len(seg) >= 2 and re.fullmatch(r"[A-Za-z0-9._\-]{2,100}", seg[1]):
-        return _ref("youtube", "legacy_" + seg[0], seg[1].lower(),
-                    f"https://www.youtube.com/{seg[0]}/{seg[1].lower()}")
+        return _ref("youtube", "legacy_" + seg[0], seg[1].lower(), f"https://www.youtube.com/{seg[0]}/{seg[1].lower()}")
     return None
 
 
@@ -204,13 +340,56 @@ def _reddit(seg: list[str], url: httpx.URL) -> ProfileRef | None:
     return None
 
 
-_GH_RESERVED = frozenset({
-    "about", "account", "apps", "blog", "collections", "contact", "customer-stories", "enterprise", "events",
-    "explore", "features", "github", "issues", "join", "login", "logout", "marketplace", "new", "notifications",
-    "orgs", "organizations", "pricing", "pulls", "readme", "search", "security", "settings", "site", "sponsors",
-    "team", "topics", "trending", "codespaces", "copilot", "dashboard", "discussions", "resources", "solutions",
-    "signup", "password_reset", "sessions", "stars", "watching", "premium-support", "mobile", "partners",
-})
+_GH_RESERVED = frozenset(
+    {
+        "about",
+        "account",
+        "apps",
+        "blog",
+        "collections",
+        "contact",
+        "customer-stories",
+        "enterprise",
+        "events",
+        "explore",
+        "features",
+        "github",
+        "issues",
+        "join",
+        "login",
+        "logout",
+        "marketplace",
+        "new",
+        "notifications",
+        "orgs",
+        "organizations",
+        "pricing",
+        "pulls",
+        "readme",
+        "search",
+        "security",
+        "settings",
+        "site",
+        "sponsors",
+        "team",
+        "topics",
+        "trending",
+        "codespaces",
+        "copilot",
+        "dashboard",
+        "discussions",
+        "resources",
+        "solutions",
+        "signup",
+        "password_reset",
+        "sessions",
+        "stars",
+        "watching",
+        "premium-support",
+        "mobile",
+        "partners",
+    }
+)
 _GH_HANDLE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$")
 
 
@@ -227,6 +406,7 @@ def _at_handle(platform: str, base: str, pattern: str) -> Parser:
             handle = seg[0][1:].lower()
             return _ref(platform, "profile", handle, f"{base}/@{handle}")
         return None
+
     return parse
 
 
@@ -237,8 +417,23 @@ def _snapchat(seg: list[str], url: httpx.URL) -> ProfileRef | None:
     return None
 
 
-_PIN_RESERVED = frozenset({"pin", "search", "ideas", "today", "business", "login", "settings", "_", "categories",
-                           "about", "explore", "videos", "resource"})
+_PIN_RESERVED = frozenset(
+    {
+        "pin",
+        "search",
+        "ideas",
+        "today",
+        "business",
+        "login",
+        "settings",
+        "_",
+        "categories",
+        "about",
+        "explore",
+        "videos",
+        "resource",
+    }
+)
 
 
 def _pinterest(seg: list[str], url: httpx.URL) -> ProfileRef | None:
@@ -248,8 +443,28 @@ def _pinterest(seg: list[str], url: httpx.URL) -> ProfileRef | None:
     return None
 
 
-_VK_RESERVED = frozenset({"feed", "im", "friends", "groups", "search", "settings", "login", "join", "video",
-                          "music", "apps", "support", "about", "dev", "legal", "terms", "privacy", "away.php"})
+_VK_RESERVED = frozenset(
+    {
+        "feed",
+        "im",
+        "friends",
+        "groups",
+        "search",
+        "settings",
+        "login",
+        "join",
+        "video",
+        "music",
+        "apps",
+        "support",
+        "about",
+        "dev",
+        "legal",
+        "terms",
+        "privacy",
+        "away.php",
+    }
+)
 
 
 def _vk(seg: list[str], url: httpx.URL) -> ProfileRef | None:
@@ -260,40 +475,103 @@ def _vk(seg: list[str], url: httpx.URL) -> ProfileRef | None:
 
 
 # -------------------------------------------------------------------- registry
-PLATFORMS: dict[str, Platform] = {p.key: p for p in (
-    Platform("telegram", "Telegram", ("t.me", "telegram.me", "telegram.dog"), FetchPolicy.PUBLIC_PAGE,
-             ("t.me",), _telegram,
-             "Telegram accounts are never looked up by phone number; only public usernames/channels are checked "
-             "via the official Bot API or the public t.me preview page.",
-             ("Invite links (t.me/+...) are private and are never opened.",)),
-    Platform("whatsapp", "WhatsApp", ("wa.me", "whatsapp.com", "chat.whatsapp.com", "api.whatsapp.com"),
-             FetchPolicy.NONE, ("wa.me", "whatsapp.com"), _whatsapp,
-             "WhatsApp registration status is never checked: there is no official public API for it and "
-             "undocumented endpoints are not used. Click-to-chat links are format-only."),
-    Platform("instagram", "Instagram", ("instagram.com",), FetchPolicy.NONE, ("instagram.com",), _instagram,
-             _NO_LIVE),
-    Platform("facebook", "Facebook", ("facebook.com", "fb.com"), FetchPolicy.NONE, ("facebook.com",), _facebook,
-             _NO_LIVE),
-    Platform("linkedin", "LinkedIn", ("linkedin.com",), FetchPolicy.NONE, ("linkedin.com/in", "linkedin.com/company"),
-             _linkedin, _NO_LIVE),
-    Platform("x", "X (Twitter)", ("x.com", "twitter.com"), FetchPolicy.NONE, ("x.com", "twitter.com"), _x, _NO_LIVE),
-    Platform(
-        "youtube", "YouTube", ("youtube.com",), FetchPolicy.OFFICIAL_API, ("youtube.com",), _youtube,
-        "YouTube channels are checked only through the official YouTube Data API v3 when an API key is configured.",
-    ),
-    Platform("tiktok", "TikTok", ("tiktok.com",), FetchPolicy.NONE, ("tiktok.com",), _tiktok, _NO_LIVE),
-    Platform("reddit", "Reddit", ("reddit.com",), FetchPolicy.OFFICIAL_API, ("reddit.com/user",), _reddit,
-             "Reddit users are checked only through the official OAuth API when client credentials are configured."),
-    Platform("github", "GitHub", ("github.com",), FetchPolicy.OFFICIAL_API, ("github.com",), _github,
-             "GitHub users are checked through the official GitHub REST API (public profile fields only)."),
-    Platform("threads", "Threads", ("threads.net", "threads.com"), FetchPolicy.NONE, ("threads.net",),
-             _at_handle("threads", "https://www.threads.net", r"[A-Za-z0-9._]{1,30}"), _NO_LIVE),
-    Platform("snapchat", "Snapchat", ("snapchat.com",), FetchPolicy.NONE, ("snapchat.com/add",), _snapchat, _NO_LIVE),
-    Platform("pinterest", "Pinterest", ("pinterest.com",), FetchPolicy.NONE, ("pinterest.com",), _pinterest, _NO_LIVE),
-    Platform("vk", "VK", ("vk.com",), FetchPolicy.NONE, ("vk.com",), _vk, _NO_LIVE),
-    Platform("medium", "Medium", ("medium.com",), FetchPolicy.NONE, ("medium.com",),
-             _at_handle("medium", "https://medium.com", r"[A-Za-z0-9._\-]{1,50}"), _NO_LIVE),
-)}
+PLATFORMS: dict[str, Platform] = {
+    p.key: p
+    for p in (
+        Platform(
+            "telegram",
+            "Telegram",
+            ("t.me", "telegram.me", "telegram.dog"),
+            FetchPolicy.PUBLIC_PAGE,
+            ("t.me",),
+            _telegram,
+            "Telegram accounts are never looked up by phone number; only public usernames/channels are checked "
+            "via the official Bot API or the public t.me preview page.",
+            ("Invite links (t.me/+...) are private and are never opened.",),
+        ),
+        Platform(
+            "whatsapp",
+            "WhatsApp",
+            ("wa.me", "whatsapp.com", "chat.whatsapp.com", "api.whatsapp.com"),
+            FetchPolicy.NONE,
+            ("wa.me", "whatsapp.com"),
+            _whatsapp,
+            "WhatsApp registration status is never checked: there is no official public API for it and "
+            "undocumented endpoints are not used. Click-to-chat links are format-only.",
+        ),
+        Platform(
+            "instagram", "Instagram", ("instagram.com",), FetchPolicy.NONE, ("instagram.com",), _instagram, _NO_LIVE
+        ),
+        Platform(
+            "facebook", "Facebook", ("facebook.com", "fb.com"), FetchPolicy.NONE, ("facebook.com",), _facebook, _NO_LIVE
+        ),
+        Platform(
+            "linkedin",
+            "LinkedIn",
+            ("linkedin.com",),
+            FetchPolicy.NONE,
+            ("linkedin.com/in", "linkedin.com/company"),
+            _linkedin,
+            _NO_LIVE,
+        ),
+        Platform(
+            "x", "X (Twitter)", ("x.com", "twitter.com"), FetchPolicy.NONE, ("x.com", "twitter.com"), _x, _NO_LIVE
+        ),
+        Platform(
+            "youtube",
+            "YouTube",
+            ("youtube.com",),
+            FetchPolicy.OFFICIAL_API,
+            ("youtube.com",),
+            _youtube,
+            "YouTube channels are checked only through the official YouTube Data API v3 when an API key is configured.",
+        ),
+        Platform("tiktok", "TikTok", ("tiktok.com",), FetchPolicy.NONE, ("tiktok.com",), _tiktok, _NO_LIVE),
+        Platform(
+            "reddit",
+            "Reddit",
+            ("reddit.com",),
+            FetchPolicy.OFFICIAL_API,
+            ("reddit.com/user",),
+            _reddit,
+            "Reddit users are checked only through the official OAuth API when client credentials are configured.",
+        ),
+        Platform(
+            "github",
+            "GitHub",
+            ("github.com",),
+            FetchPolicy.OFFICIAL_API,
+            ("github.com",),
+            _github,
+            "GitHub users are checked through the official GitHub REST API (public profile fields only).",
+        ),
+        Platform(
+            "threads",
+            "Threads",
+            ("threads.net", "threads.com"),
+            FetchPolicy.NONE,
+            ("threads.net",),
+            _at_handle("threads", "https://www.threads.net", r"[A-Za-z0-9._]{1,30}"),
+            _NO_LIVE,
+        ),
+        Platform(
+            "snapchat", "Snapchat", ("snapchat.com",), FetchPolicy.NONE, ("snapchat.com/add",), _snapchat, _NO_LIVE
+        ),
+        Platform(
+            "pinterest", "Pinterest", ("pinterest.com",), FetchPolicy.NONE, ("pinterest.com",), _pinterest, _NO_LIVE
+        ),
+        Platform("vk", "VK", ("vk.com",), FetchPolicy.NONE, ("vk.com",), _vk, _NO_LIVE),
+        Platform(
+            "medium",
+            "Medium",
+            ("medium.com",),
+            FetchPolicy.NONE,
+            ("medium.com",),
+            _at_handle("medium", "https://medium.com", r"[A-Za-z0-9._\-]{1,50}"),
+            _NO_LIVE,
+        ),
+    )
+}
 
 ALL_DOMAINS: frozenset[str] = frozenset(d for p in PLATFORMS.values() for d in p.domains)
 DEFAULT_PLATFORMS: tuple[str, ...] = tuple(PLATFORMS)

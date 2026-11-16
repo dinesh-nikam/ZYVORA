@@ -37,9 +37,13 @@ class TwilioCarrierProvider:
     async def lookup(self, e164: str) -> CarrierInfo:
         url = f"https://lookups.twilio.com/v2/PhoneNumbers/{quote(e164)}"
         try:
-            result = await self._http.fetch(url, allowed_domains={"lookups.twilio.com"},
-                                            params={"Fields": "line_type_intelligence"}, auth=self._auth,
-                                            target_label="carrier:twilio")
+            result = await self._http.fetch(
+                url,
+                allowed_domains={"lookups.twilio.com"},
+                params={"Fields": "line_type_intelligence"},
+                auth=self._auth,
+                target_label="carrier:twilio",
+            )
         except (OutboundBlocked, httpx.HTTPError) as exc:
             logger.warning("carrier lookup failed", extra={"error_type": type(exc).__name__})
             return CarrierInfo(None, None, self.name, error="network_error")

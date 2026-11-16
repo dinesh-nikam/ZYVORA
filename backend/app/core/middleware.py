@@ -102,9 +102,12 @@ class RequestContextMiddleware:
     @staticmethod
     async def _reject_too_large(send: Send, request_id: str) -> None:
         body = json.dumps(error_body("payload_too_large", "Request body too large", request_id)).encode()
-        headers: list[tuple[bytes, bytes]] = [(b"content-type", b"application/json"),
-                                              (b"content-length", str(len(body)).encode()),
-                                              (b"x-request-id", request_id.encode()), *SECURITY_HEADERS]
+        headers: list[tuple[bytes, bytes]] = [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+            (b"x-request-id", request_id.encode()),
+            *SECURITY_HEADERS,
+        ]
         await send({"type": "http.response.start", "status": 413, "headers": headers})
         await send({"type": "http.response.body", "body": body})
 
@@ -139,14 +142,23 @@ class HttpsEnforcementMiddleware:
         if scope.get("method") in ("GET", "HEAD") and host:
             query = scope.get("query_string", b"").decode("latin-1")
             location = f"https://{host}{scope.get('path', '/')}" + (f"?{query}" if query else "")
-            await send({"type": "http.response.start", "status": 308,
-                        "headers": [(b"location", location.encode("latin-1")), (b"content-length", b"0")]})
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 308,
+                    "headers": [(b"location", location.encode("latin-1")), (b"content-length", b"0")],
+                }
+            )
             await send({"type": "http.response.body", "body": b""})
             return
         body = json.dumps(error_body("https_required", "HTTPS is required", None)).encode()
-        await send({"type": "http.response.start", "status": 400,
-                    "headers": [(b"content-type", b"application/json"),
-                                (b"content-length", str(len(body)).encode())]})
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 400,
+                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
+            }
+        )
         await send({"type": "http.response.body", "body": body})
 
 

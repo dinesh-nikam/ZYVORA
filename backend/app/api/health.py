@@ -26,10 +26,13 @@ async def ready(container: Container = Depends(get_container)) -> JSONResponse:
     """Readiness: database and Redis reachable."""
     components = await check_components(container)
     healthy = all(c.status == "ok" for c in components.values())
-    return JSONResponse(status_code=200 if healthy else 503, content={
-        "status": "ok" if healthy else "down",
-        "components": {k: v.model_dump() for k, v in components.items()},
-    })
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={
+            "status": "ok" if healthy else "down",
+            "components": {k: v.model_dump() for k, v in components.items()},
+        },
+    )
 
 
 @router.get("/metrics", include_in_schema=False)

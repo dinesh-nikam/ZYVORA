@@ -71,8 +71,9 @@ class InlineJobQueue:
     """Runs jobs in the current process.  ``eager=True`` awaits completion inside
     ``enqueue_discovery`` (deterministic tests); otherwise jobs run as tasks."""
 
-    def __init__(self, runner: Callable[[uuid.UUID, int], Awaitable[object]], *, eager: bool = False,
-                 max_tries: int = 4) -> None:
+    def __init__(
+        self, runner: Callable[[uuid.UUID, int], Awaitable[object]], *, eager: bool = False, max_tries: int = 4
+    ) -> None:
         self._runner = runner
         self._eager = eager
         self._max_tries = max_tries

@@ -20,28 +20,46 @@ router = APIRouter(prefix="/integrations/telegram", tags=["telegram integration"
 
 
 @router.post("/link-code", response_model=TelegramLinkCodeOut, status_code=status.HTTP_201_CREATED)
-async def create_link_code(request: Request, principal: Principal = Depends(get_user_principal),
-                           auth: AuthService = Depends(get_auth_service)) -> TelegramLinkCodeOut:
+async def create_link_code(
+    request: Request, principal: Principal = Depends(get_user_principal), auth: AuthService = Depends(get_auth_service)
+) -> TelegramLinkCodeOut:
     code = await auth.create_telegram_link_code(principal, audit_context(request, principal))
     await auth.session.commit()
-    return TelegramLinkCodeOut(code=code, expires_in=LINK_CODE_TTL_SECONDS,
-                               instructions=f"Send '/link {code}' to the PHONEINTEL Telegram bot within 10 minutes.")
+    return TelegramLinkCodeOut(
+        code=code,
+        expires_in=LINK_CODE_TTL_SECONDS,
+        instructions=f"Send '/link {code}' to the PHONEINTEL Telegram bot within 10 minutes.",
+    )
 
 
 @router.post("/link", response_model=UserOut, dependencies=[Depends(ip_rate_limit)])
-async def link(body: TelegramLinkIn, request: Request, service: Principal = Depends(get_principal),
-               auth: AuthService = Depends(get_auth_service)) -> UserOut:
+async def link(
+    body: TelegramLinkIn,
+    request: Request,
+    service: Principal = Depends(get_principal),
+    auth: AuthService = Depends(get_auth_service),
+) -> UserOut:
     """Service-account only (``telegram:act_as``)."""
     service.require(Permission.TELEGRAM_ACT_AS)
     user = await auth.link_telegram(service, body.code, body.telegram_user_id, audit_context(request, service))
     await auth.session.commit()
-    return UserOut(id=user.id, email=user.email, status=user.status, role=user.role.name,
-                   created_at=user.created_at, last_login_at=user.last_login_at)
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        status=user.status,
+        role=user.role.name,
+        created_at=user.created_at,
+        last_login_at=user.last_login_at,
+    )
 
 
 @router.post("/unlink", response_model=MessageOut)
-async def unlink(body: TelegramUnlinkIn, request: Request, service: Principal = Depends(get_principal),
-                 auth: AuthService = Depends(get_auth_service)) -> MessageOut:
+async def unlink(
+    body: TelegramUnlinkIn,
+    request: Request,
+    service: Principal = Depends(get_principal),
+    auth: AuthService = Depends(get_auth_service),
+) -> MessageOut:
     """Service-account only (``telegram:act_as``)."""
     service.require(Permission.TELEGRAM_ACT_AS)
     removed = await auth.unlink_telegram(service, body.telegram_user_id, audit_context(request, service))

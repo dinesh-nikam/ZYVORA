@@ -28,8 +28,16 @@ class UserRepository:
         await self.session.flush()
         return user
 
-    async def list(self, *, status: str | None, role: str | None, email_contains: str | None, sort: str | None,
-                   page: int, page_size: int) -> Page[User]:
+    async def list(
+        self,
+        *,
+        status: str | None,
+        role: str | None,
+        email_contains: str | None,
+        sort: str | None,
+        page: int,
+        page_size: int,
+    ) -> Page[User]:
         stmt = select(User).join(Role)
         if status:
             stmt = stmt.where(User.status == status)
@@ -37,8 +45,17 @@ class UserRepository:
             stmt = stmt.where(Role.name == role)
         if email_contains:
             stmt = stmt.where(User.email.contains(email_contains.lower(), autoescape=True))
-        stmt = apply_sort(stmt, sort, {"created_at": User.created_at, "email": User.email,
-                                       "last_login_at": User.last_login_at, "status": User.status}, "-created_at")
+        stmt = apply_sort(
+            stmt,
+            sort,
+            {
+                "created_at": User.created_at,
+                "email": User.email,
+                "last_login_at": User.last_login_at,
+                "status": User.status,
+            },
+            "-created_at",
+        )
         return await paginate(self.session, stmt, page, page_size)
 
 
@@ -57,13 +74,15 @@ class TokenRepository:
 
     async def revoke_family(self, family_id: uuid.UUID, now: datetime) -> None:
         await self.session.execute(
-            update(RefreshToken).where(RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None))
+            update(RefreshToken)
+            .where(RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None))
             .values(revoked_at=now)
         )
 
     async def revoke_all_for_user(self, user_id: uuid.UUID, now: datetime) -> None:
         await self.session.execute(
-            update(RefreshToken).where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
             .values(revoked_at=now)
         )
 

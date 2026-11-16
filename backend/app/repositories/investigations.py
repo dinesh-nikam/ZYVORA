@@ -22,11 +22,19 @@ class InvestigationRepository:
         await self.session.flush()
         return investigation
 
-    async def get(self, investigation_id: uuid.UUID, *, owner_id: uuid.UUID | None,
-                  include_deleted: bool = False, for_update: bool = False) -> Investigation | None:
+    async def get(
+        self,
+        investigation_id: uuid.UUID,
+        *,
+        owner_id: uuid.UUID | None,
+        include_deleted: bool = False,
+        for_update: bool = False,
+    ) -> Investigation | None:
         """Fetch an investigation.  ``owner_id=None`` means unrestricted (privileged callers only)."""
-        stmt = select(Investigation).where(Investigation.id == investigation_id).options(
-            selectinload(Investigation.phone_intelligence)
+        stmt = (
+            select(Investigation)
+            .where(Investigation.id == investigation_id)
+            .options(selectinload(Investigation.phone_intelligence))
         )
         if owner_id is not None:
             stmt = stmt.where(Investigation.user_id == owner_id)
@@ -50,8 +58,10 @@ class InvestigationRepository:
         page: int,
         page_size: int,
     ) -> Page[Investigation]:
-        stmt = select(Investigation).where(Investigation.deleted_at.is_(None)).options(
-            selectinload(Investigation.phone_intelligence)
+        stmt = (
+            select(Investigation)
+            .where(Investigation.deleted_at.is_(None))
+            .options(selectinload(Investigation.phone_intelligence))
         )
         if owner_id is not None:
             stmt = stmt.where(Investigation.user_id == owner_id)
@@ -67,11 +77,18 @@ class InvestigationRepository:
             stmt = stmt.where(Investigation.created_at >= created_from)
         if created_to:
             stmt = stmt.where(Investigation.created_at <= created_to)
-        stmt = apply_sort(stmt, sort, {
-            "created_at": Investigation.created_at, "updated_at": Investigation.updated_at,
-            "status": Investigation.status, "reference": Investigation.investigation_reference,
-            "completed_at": Investigation.completed_at,
-        }, "-created_at")
+        stmt = apply_sort(
+            stmt,
+            sort,
+            {
+                "created_at": Investigation.created_at,
+                "updated_at": Investigation.updated_at,
+                "status": Investigation.status,
+                "reference": Investigation.investigation_reference,
+                "completed_at": Investigation.completed_at,
+            },
+            "-created_at",
+        )
         return await paginate(self.session, stmt, page, page_size)
 
     async def ids_for_owner(self, owner_id: uuid.UUID) -> builtins.list[uuid.UUID]:
@@ -84,10 +101,12 @@ class InvestigationRepository:
 
     async def erase_content(self, investigation: Investigation, now: datetime) -> None:
         """Soft-delete + immediate erasure of all personal/evidence content."""
-        await self.session.execute(delete(DiscoveredProfile).where(
-            DiscoveredProfile.investigation_id == investigation.id))
-        await self.session.execute(delete(PhoneIntelligence).where(
-            PhoneIntelligence.investigation_id == investigation.id))
+        await self.session.execute(
+            delete(DiscoveredProfile).where(DiscoveredProfile.investigation_id == investigation.id)
+        )
+        await self.session.execute(
+            delete(PhoneIntelligence).where(PhoneIntelligence.investigation_id == investigation.id)
+        )
         investigation.normalized_phone = None
         investigation.phone_lookup_hash = None
         investigation.purpose = None
@@ -102,10 +121,14 @@ class ProfileRepository:
         self.session = session
 
     async def by_canonical(self, investigation_id: uuid.UUID, canonical_url: str) -> DiscoveredProfile | None:
-        stmt = select(DiscoveredProfile).where(
-            DiscoveredProfile.investigation_id == investigation_id,
-            DiscoveredProfile.canonical_url == canonical_url,
-        ).options(selectinload(DiscoveredProfile.evidence))
+        stmt = (
+            select(DiscoveredProfile)
+            .where(
+                DiscoveredProfile.investigation_id == investigation_id,
+                DiscoveredProfile.canonical_url == canonical_url,
+            )
+            .options(selectinload(DiscoveredProfile.evidence))
+        )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def get_owned(self, profile_id: uuid.UUID, owner_id: uuid.UUID | None) -> DiscoveredProfile | None:
@@ -119,27 +142,48 @@ class ProfileRepository:
             stmt = stmt.where(Investigation.user_id == owner_id)
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
-    async def list(self, investigation_id: uuid.UUID, *, platform: str | None, status: str | None,
-                   min_confidence: int | None, sort: str | None, page: int, page_size: int,
-                   ) -> Page[DiscoveredProfile]:
-        stmt = select(DiscoveredProfile).where(DiscoveredProfile.investigation_id == investigation_id).options(
-            selectinload(DiscoveredProfile.evidence))
+    async def list(
+        self,
+        investigation_id: uuid.UUID,
+        *,
+        platform: str | None,
+        status: str | None,
+        min_confidence: int | None,
+        sort: str | None,
+        page: int,
+        page_size: int,
+    ) -> Page[DiscoveredProfile]:
+        stmt = (
+            select(DiscoveredProfile)
+            .where(DiscoveredProfile.investigation_id == investigation_id)
+            .options(selectinload(DiscoveredProfile.evidence))
+        )
         if platform:
             stmt = stmt.where(DiscoveredProfile.platform == platform)
         if status:
             stmt = stmt.where(DiscoveredProfile.verification_status == status)
         if min_confidence is not None:
             stmt = stmt.where(DiscoveredProfile.confidence_score >= min_confidence)
-        stmt = apply_sort(stmt, sort, {
-            "confidence": DiscoveredProfile.confidence_score, "discovered_at": DiscoveredProfile.discovered_at,
-            "platform": DiscoveredProfile.platform, "status": DiscoveredProfile.verification_status,
-        }, "-confidence")
+        stmt = apply_sort(
+            stmt,
+            sort,
+            {
+                "confidence": DiscoveredProfile.confidence_score,
+                "discovered_at": DiscoveredProfile.discovered_at,
+                "platform": DiscoveredProfile.platform,
+                "status": DiscoveredProfile.verification_status,
+            },
+            "-confidence",
+        )
         return await paginate(self.session, stmt, page, page_size)
 
     async def all_for(self, investigation_id: uuid.UUID) -> builtins.list[DiscoveredProfile]:
-        stmt = (select(DiscoveredProfile).where(DiscoveredProfile.investigation_id == investigation_id)
-                .options(selectinload(DiscoveredProfile.evidence))
-                .order_by(DiscoveredProfile.confidence_score.desc(), DiscoveredProfile.platform))
+        stmt = (
+            select(DiscoveredProfile)
+            .where(DiscoveredProfile.investigation_id == investigation_id)
+            .options(selectinload(DiscoveredProfile.evidence))
+            .order_by(DiscoveredProfile.confidence_score.desc(), DiscoveredProfile.platform)
+        )
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def add(self, profile: DiscoveredProfile) -> DiscoveredProfile:
@@ -185,8 +229,12 @@ class JobRepository:
         return (await self.session.execute(stmt)).scalars().first()
 
     async def latest_for(self, investigation_id: uuid.UUID) -> InvestigationJob | None:
-        stmt = (select(InvestigationJob).where(InvestigationJob.investigation_id == investigation_id)
-                .order_by(InvestigationJob.created_at.desc()).limit(1))
+        stmt = (
+            select(InvestigationJob)
+            .where(InvestigationJob.investigation_id == investigation_id)
+            .order_by(InvestigationJob.created_at.desc())
+            .limit(1)
+        )
         return (await self.session.execute(stmt)).scalars().first()
 
     async def cancel_requested(self, job_id: uuid.UUID) -> bool:
@@ -200,6 +248,7 @@ class JobRepository:
         )
         ids = list((await self.session.execute(stmt)).scalars().all())
         if ids:
-            await self.session.execute(update(InvestigationJob).where(InvestigationJob.id.in_(ids))
-                                       .values(cancel_requested_at=now))
+            await self.session.execute(
+                update(InvestigationJob).where(InvestigationJob.id.in_(ids)).values(cancel_requested_at=now)
+            )
         return ids

@@ -66,20 +66,26 @@ class DiscoveryRequest:
     live_checks: bool = True
 
 
-def validate_discovery_request(platforms: list[str] | None, profile_urls: list[str] | None,
-                               include_web_search: bool, live_checks: bool) -> DiscoveryRequest:
+def validate_discovery_request(
+    platforms: list[str] | None, profile_urls: list[str] | None, include_web_search: bool, live_checks: bool
+) -> DiscoveryRequest:
     selected = list(dict.fromkeys(p.lower() for p in (platforms or DEFAULT_PLATFORMS)))
     unknown = [p for p in selected if p not in PLATFORMS]
     if unknown:
-        raise ValidationFailed("Unknown platform", code="invalid_platform",
-                               details=[{"unknown": unknown, "supported": sorted(PLATFORMS)}])
+        raise ValidationFailed(
+            "Unknown platform", code="invalid_platform", details=[{"unknown": unknown, "supported": sorted(PLATFORMS)}]
+        )
     urls = [u.strip() for u in (profile_urls or []) if u and u.strip()]
     if len(urls) > MAX_USER_PROFILE_URLS:
         raise ValidationFailed(f"At most {MAX_USER_PROFILE_URLS} profile URLs per request", code="too_many_urls")
     if any(len(u) > 2048 for u in urls):
         raise ValidationFailed("Profile URL too long", code="invalid_url")
-    return DiscoveryRequest(platforms=selected, include_web_search=include_web_search,
-                            profile_urls=list(dict.fromkeys(urls)), live_checks=live_checks)
+    return DiscoveryRequest(
+        platforms=selected,
+        include_web_search=include_web_search,
+        profile_urls=list(dict.fromkeys(urls)),
+        live_checks=live_checks,
+    )
 
 
 class InvestigationService:
@@ -112,56 +118,81 @@ class InvestigationService:
         details = intel.details()
         if self.c.carrier_provider is not None:
             lookup = await self.c.carrier_provider.lookup(intel.e164)
-            details["licensed_carrier_lookup"] = {"provider": lookup.provider, "line_type": lookup.line_type,
-                                                  "error": lookup.error}
+            details["licensed_carrier_lookup"] = {
+                "provider": lookup.provider,
+                "line_type": lookup.line_type,
+                "error": lookup.error,
+            }
             if lookup.carrier:
                 carrier, provider = lookup.carrier, f"{lookup.provider}; {intel.metadata_provider}"
         now = utcnow()
-        investigation = await self.investigations.add(Investigation(
-            user_id=principal.id,
-            investigation_reference=new_reference(),
-            normalized_phone=intel.e164,
-            phone_lookup_hash=self.phone_hash(intel.e164),
-            phone_country_code=intel.country_code,
-            purpose=purpose.strip(),
-            authorization_basis=authorization_basis.value,
-            authorization_reference=(authorization_reference or "").strip() or None,
-            status=InvestigationStatus.CREATED.value,
-            summary={"limitations": intel.limitations},
-            expires_at=now + timedelta(days=self.c.settings.retention_investigation_days),
-        ))
-        await self.investigations.set_phone_intelligence(PhoneIntelligence(
-            investigation_id=investigation.id,
+        investigation = await self.investigations.add(
+            Investigation(
+                user_id=principal.id,
+                investigation_reference=new_reference(),
+                normalized_phone=intel.e164,
+                phone_lookup_hash=self.phone_hash(intel.e164),
+                phone_country_code=intel.country_code,
+                purpose=purpose.strip(),
+                authorization_basis=authorization_basis.value,
+                authorization_reference=(authorization_reference or "").strip() or None,
+                status=InvestigationStatus.CREATED.value,
+                summary={"limitations": intel.limitations},
+                expires_at=now + timedelta(days=self.c.settings.retention_investigation_days),
+            )
+        )
+        await self.investigations.set_phone_intelligence(
+            PhoneIntelligence(
+                investigation_id=investigation.id,
+                country_code=intel.country_code,
+                region_code=intel.region_code,
+                country_name=intel.country_name,
+                number_type=intel.number_type,
+                validation_status=intel.validation_status.value,
+                carrier=carrier,
+                metadata_provider=provider,
+                details=details,
+                checked_at=intel.checked_at,
+            )
+        )
+        audit.record(
+            self.session,
+            ctx,
+            "investigation.create",
+            "investigation",
+            investigation.id,
+            reference=investigation.investigation_reference,
+            basis=authorization_basis.value,
             country_code=intel.country_code,
-            region_code=intel.region_code,
-            country_name=intel.country_name,
-            number_type=intel.number_type,
-            validation_status=intel.validation_status.value,
-            carrier=carrier,
-            metadata_provider=provider,
-            details=details,
-            checked_at=intel.checked_at,
-        ))
-        audit.record(self.session, ctx, "investigation.create", "investigation", investigation.id,
-                     reference=investigation.investigation_reference, basis=authorization_basis.value,
-                     country_code=intel.country_code)
+        )
         await self.session.commit()
         await self.session.refresh(investigation, ["phone_intelligence"])
         INVESTIGATIONS_CREATED.inc()
-        await self.c.events.publish(investigation.id, EventType.INVESTIGATION_CREATED,
-                                    {"reference": investigation.investigation_reference})
+        await self.c.events.publish(
+            investigation.id, EventType.INVESTIGATION_CREATED, {"reference": investigation.investigation_reference}
+        )
         return investigation
 
     # ------------------------------------------------------------------- read
-    async def get(self, principal: Principal, investigation_id: uuid.UUID, ctx: AuditContext | None = None,
-                  ) -> Investigation:
+    async def get(
+        self,
+        principal: Principal,
+        investigation_id: uuid.UUID,
+        ctx: AuditContext | None = None,
+    ) -> Investigation:
         principal.require(Permission.INVESTIGATION_READ)
         investigation = await self.investigations.get(investigation_id, owner_id=owner_scope(principal))
         if investigation is None:
             raise NotFound("Investigation not found")
         if ctx is not None and investigation.user_id != principal.id:
-            audit.record(self.session, ctx, "investigation.read_other_user", "investigation", investigation.id,
-                         owner_id=str(investigation.user_id))
+            audit.record(
+                self.session,
+                ctx,
+                "investigation.read_other_user",
+                "investigation",
+                investigation.id,
+                owner_id=str(investigation.user_id),
+            )
             await self.session.commit()
         return investigation
 
@@ -220,27 +251,43 @@ class InvestigationService:
                 return previous, False
         active = await self.jobs.active_for(investigation.id, JobType.PROFILE_DISCOVERY.value)
         if active is not None:
-            raise Conflict("A discovery job is already running for this investigation", code="job_already_active",
-                           details=[{"job_id": str(active.id)}])
+            raise Conflict(
+                "A discovery job is already running for this investigation",
+                code="job_already_active",
+                details=[{"job_id": str(active.id)}],
+            )
         job = InvestigationJob(
             investigation_id=investigation.id,
             job_type=JobType.PROFILE_DISCOVERY.value,
             status=JobStatus.QUEUED.value,
             idempotency_key=idempotency_key,
-            parameters={"platforms": request.platforms, "include_web_search": request.include_web_search,
-                        "profile_urls": request.profile_urls, "live_checks": request.live_checks},
+            parameters={
+                "platforms": request.platforms,
+                "include_web_search": request.include_web_search,
+                "profile_urls": request.profile_urls,
+                "live_checks": request.live_checks,
+            },
             progress={},
         )
         try:
             await self.jobs.add(job)
         except IntegrityError as exc:  # concurrent request won the partial-unique index race
             await self.session.rollback()
-            raise Conflict("A discovery job is already running for this investigation",
-                           code="job_already_active") from exc
+            raise Conflict(
+                "A discovery job is already running for this investigation", code="job_already_active"
+            ) from exc
         investigation.status = InvestigationStatus.QUEUED.value
-        audit.record(self.session, ctx, "discovery.start", "investigation", investigation.id, job_id=str(job.id),
-                     platforms=request.platforms, web_search=request.include_web_search,
-                     user_urls=len(request.profile_urls))
+        audit.record(
+            self.session,
+            ctx,
+            "discovery.start",
+            "investigation",
+            investigation.id,
+            job_id=str(job.id),
+            platforms=request.platforms,
+            web_search=request.include_web_search,
+            user_urls=len(request.profile_urls),
+        )
         await self.session.commit()
         await self.c.jobs.enqueue_discovery(job.id)
         return job, True
@@ -256,8 +303,12 @@ class InvestigationService:
             raise NotFound("Profile not found")
         return profile
 
-    async def reverify_profile(self, principal: Principal, profile_id: uuid.UUID, ctx: AuditContext,
-                               ) -> DiscoveredProfile:
+    async def reverify_profile(
+        self,
+        principal: Principal,
+        profile_id: uuid.UUID,
+        ctx: AuditContext,
+    ) -> DiscoveredProfile:
         principal.require(Permission.PROFILE_VERIFY)
         profile = await self.profiles.get_owned(profile_id, principal.id)
         if profile is None:
@@ -271,18 +322,25 @@ class InvestigationService:
         from app.services.verification.engine import EvidenceItem  # noqa: PLC0415
 
         prior = [
-            EvidenceItem(source_url=e.source_url, source_type=EvidenceSourceType(e.source_type),
-                         source_name=e.source_name, reliability=SourceReliability(e.source_reliability),
-                         summary=e.evidence_summary, phone_reference_found=e.phone_reference_found,
-                         on_profile=e.source_type == EvidenceSourceType.SEARCH_RESULT.value
-                         and _same_profile(e.source_url, profile.canonical_url),
-                         collected_at=e.collected_at)
+            EvidenceItem(
+                source_url=e.source_url,
+                source_type=EvidenceSourceType(e.source_type),
+                source_name=e.source_name,
+                reliability=SourceReliability(e.source_reliability),
+                summary=e.evidence_summary,
+                phone_reference_found=e.phone_reference_found,
+                on_profile=e.source_type == EvidenceSourceType.SEARCH_RESULT.value
+                and _same_profile(e.source_url, profile.canonical_url),
+                collected_at=e.collected_at,
+            )
             for e in profile.evidence
             if e.source_type in (EvidenceSourceType.SEARCH_RESULT.value, EvidenceSourceType.USER_SUBMISSION.value)
         ]
         outcome = await self.c.verification.verify(
-            profile.profile_url, variants=build_variants(investigation.normalized_phone),
-            discovery_source=DiscoverySource(profile.discovery_source), prior_evidence=prior,
+            profile.profile_url,
+            variants=build_variants(investigation.normalized_phone),
+            discovery_source=DiscoverySource(profile.discovery_source),
+            prior_evidence=prior,
         )
         await persist_outcome(self.session, self.c, investigation.id, outcome)
         audit.record(self.session, ctx, "profile.verify", "profile", profile.id, status=outcome.status.value)
@@ -292,8 +350,13 @@ class InvestigationService:
             raise NotFound("Profile not found")
         return refreshed
 
-    async def verify_url(self, principal: Principal, url: str, phone: str | None, ctx: AuditContext,
-                         ) -> VerificationOutcome:
+    async def verify_url(
+        self,
+        principal: Principal,
+        url: str,
+        phone: str | None,
+        ctx: AuditContext,
+    ) -> VerificationOutcome:
         principal.require(Permission.PROFILE_VERIFY)
         variants = None
         if phone:
@@ -302,15 +365,27 @@ class InvestigationService:
         from app.services.verification.engine import EvidenceItem  # noqa: PLC0415
 
         submission = EvidenceItem(
-            source_url=url[:2048], source_type=EvidenceSourceType.USER_SUBMISSION, source_name="investigator",
-            reliability=SourceReliability.INFORMATIONAL, summary="URL submitted by the investigator.",
-            phone_reference_found=False, on_profile=False,
+            source_url=url[:2048],
+            source_type=EvidenceSourceType.USER_SUBMISSION,
+            source_name="investigator",
+            reliability=SourceReliability.INFORMATIONAL,
+            summary="URL submitted by the investigator.",
+            phone_reference_found=False,
+            on_profile=False,
         )
-        outcome = await self.c.verification.verify(url, variants=variants,
-                                                   discovery_source=DiscoverySource.USER_PROVIDED,
-                                                   prior_evidence=[submission])
-        audit.record(self.session, ctx, "profile.verify_url", "profile_url", None, platform=outcome.platform,
-                     status=outcome.status.value, with_number=phone is not None)
+        outcome = await self.c.verification.verify(
+            url, variants=variants, discovery_source=DiscoverySource.USER_PROVIDED, prior_evidence=[submission]
+        )
+        audit.record(
+            self.session,
+            ctx,
+            "profile.verify_url",
+            "profile_url",
+            None,
+            platform=outcome.platform,
+            status=outcome.status.value,
+            with_number=phone is not None,
+        )
         await self.session.commit()
         return outcome
 
@@ -330,9 +405,14 @@ class InvestigationService:
         user = principal.user
         return {
             "exported_at": utcnow().isoformat(),
-            "account": {"id": str(user.id), "email": user.email, "role": user.role.name, "status": user.status,
-                        "created_at": user.created_at.isoformat(),
-                        "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None},
+            "account": {
+                "id": str(user.id),
+                "email": user.email,
+                "role": user.role.name,
+                "status": user.status,
+                "created_at": user.created_at.isoformat(),
+                "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+            },
             "investigations": investigations,
         }
 
@@ -346,8 +426,9 @@ class InvestigationService:
                 count += 1
         if include_account:
             await self._close_account(principal.user)
-        audit.record(self.session, ctx, "data.erase", "user", principal.id, investigations=count,
-                     account_closed=include_account)
+        audit.record(
+            self.session, ctx, "data.erase", "user", principal.id, investigations=count, account_closed=include_account
+        )
         await self.session.commit()
         return count
 
@@ -371,8 +452,9 @@ def _same_profile(source_url: str, canonical_url: str) -> bool:
     return hit is not None and hit[1].canonical_url == canonical_url
 
 
-async def persist_outcome(session: AsyncSession, container: Container, investigation_id: uuid.UUID,
-                          outcome: VerificationOutcome) -> DiscoveredProfile:
+async def persist_outcome(
+    session: AsyncSession, container: Container, investigation_id: uuid.UUID, outcome: VerificationOutcome
+) -> DiscoveredProfile:
     """Upsert a profile + evidence for one verification outcome."""
     profiles = ProfileRepository(session)
     canonical = outcome.canonical_url or outcome.input_url
@@ -393,23 +475,27 @@ async def persist_outcome(session: AsyncSession, container: Container, investiga
         "verified_at": outcome.checked_at,
     }
     if profile is None:
-        profile = await profiles.add(DiscoveredProfile(investigation_id=investigation_id, canonical_url=canonical,
-                                                       discovered_at=now, **values))
+        profile = await profiles.add(
+            DiscoveredProfile(investigation_id=investigation_id, canonical_url=canonical, discovered_at=now, **values)
+        )
     else:
         for key, value in values.items():
             setattr(profile, key, value)
     expiry = now + timedelta(days=container.settings.retention_evidence_days)
-    await profiles.replace_evidence(profile, [
-        EvidenceSource(
-            source_url=item.source_url[:2048],
-            source_type=item.source_type.value,
-            source_name=item.source_name[:64],
-            source_reliability=item.reliability.value,
-            evidence_summary=item.summary,
-            phone_reference_found=item.phone_reference_found,
-            collected_at=item.collected_at,
-            expiration_at=expiry,
-        )
-        for item in outcome.evidence
-    ])
+    await profiles.replace_evidence(
+        profile,
+        [
+            EvidenceSource(
+                source_url=item.source_url[:2048],
+                source_type=item.source_type.value,
+                source_name=item.source_name[:64],
+                source_reliability=item.reliability.value,
+                evidence_summary=item.summary,
+                phone_reference_found=item.phone_reference_found,
+                collected_at=item.collected_at,
+                expiration_at=expiry,
+            )
+            for item in outcome.evidence
+        ],
+    )
     return profile

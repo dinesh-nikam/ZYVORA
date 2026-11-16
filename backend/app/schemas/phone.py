@@ -9,8 +9,13 @@ from app.schemas.common import APIModel
 
 class PhoneIn(APIModel):
     phone: str = Field(min_length=3, max_length=32, examples=["+919876543210"])
-    region: str | None = Field(default=None, min_length=2, max_length=2, pattern=r"^[A-Za-z]{2}$",
-                               description="ISO-3166 region hint for numbers given in national format")
+    region: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=2,
+        pattern=r"^[A-Za-z]{2}$",
+        description="ISO-3166 region hint for numbers given in national format",
+    )
 
 
 class PhoneValidationOut(APIModel):

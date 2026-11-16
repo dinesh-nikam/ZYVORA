@@ -128,8 +128,12 @@ class DiscoveryService:
                         seen.add(key)
                         run.unique_results += 1
                         self._ingest(run, hit, variants, allowed)
-                    progress = {"queries_executed": run.queries_executed, "queries_planned": run.queries_planned,
-                                "candidates": len(run.candidates), "provider": provider.name}
+                    progress = {
+                        "queries_executed": run.queries_executed,
+                        "queries_planned": run.queries_planned,
+                        "candidates": len(run.candidates),
+                        "provider": provider.name,
+                    }
                 if on_progress is not None:
                     await on_progress(progress)
 
@@ -142,8 +146,9 @@ class DiscoveryService:
         return run
 
     # ------------------------------------------------------------- internals
-    def _merge_duplicate(self, run: SearchRunResult, hit: SearchHit, variants: NumberVariants,
-                         allowed: set[str]) -> None:
+    def _merge_duplicate(
+        self, run: SearchRunResult, hit: SearchHit, variants: NumberVariants, allowed: set[str]
+    ) -> None:
         """A second provider returned the same URL: add it as independent evidence."""
         identity = identify(hit.url)
         if identity is None or identity[0].key not in allowed:
@@ -163,8 +168,9 @@ class DiscoveryService:
             produced = True
             candidate = run.candidates.setdefault(
                 ref.canonical_url,
-                Candidate(platform=platform, ref=ref, discovery_source=DiscoverySource.SEARCH_INDEX,
-                          original_url=hit.url),
+                Candidate(
+                    platform=platform, ref=ref, discovery_source=DiscoverySource.SEARCH_INDEX, original_url=hit.url
+                ),
             )
             candidate.evidence.append(self._hit_evidence(hit, variants, on_profile=True, phone_found=phone_found))
         if phone_found:
@@ -174,31 +180,39 @@ class DiscoveryService:
                 produced = True
                 candidate = run.candidates.setdefault(
                     ref.canonical_url,
-                    Candidate(platform=platform, ref=ref, discovery_source=DiscoverySource.SEARCH_SNIPPET_EXTRACTION,
-                              original_url=ref.canonical_url),
+                    Candidate(
+                        platform=platform,
+                        ref=ref,
+                        discovery_source=DiscoverySource.SEARCH_SNIPPET_EXTRACTION,
+                        original_url=ref.canonical_url,
+                    ),
                 )
-                candidate.evidence.append(EvidenceItem(
-                    source_url=hit.url[:2048],
-                    source_type=EvidenceSourceType.SEARCH_RESULT,
-                    source_name=hit.provider,
-                    reliability=SourceReliability.LOW,
-                    summary=redact_excerpt(text, variants),
-                    phone_reference_found=True,
-                    on_profile=False,
-                    collected_at=hit.retrieved_at,
-                ))
+                candidate.evidence.append(
+                    EvidenceItem(
+                        source_url=hit.url[:2048],
+                        source_type=EvidenceSourceType.SEARCH_RESULT,
+                        source_name=hit.provider,
+                        reliability=SourceReliability.LOW,
+                        summary=redact_excerpt(text, variants),
+                        phone_reference_found=True,
+                        on_profile=False,
+                        collected_at=hit.retrieved_at,
+                    )
+                )
         if phone_found and not produced:
             run.web_mentions_without_profile += 1
 
     @staticmethod
-    def _hit_evidence(hit: SearchHit, variants: NumberVariants, *, on_profile: bool,
-                      phone_found: bool | None = None) -> EvidenceItem:
+    def _hit_evidence(
+        hit: SearchHit, variants: NumberVariants, *, on_profile: bool, phone_found: bool | None = None
+    ) -> EvidenceItem:
         text = f"{hit.title} {hit.snippet}"
         found = text_references_number(text, variants) if phone_found is None else phone_found
         summary = redact_excerpt(text, variants)
         if not found:
-            summary = ("Returned for an exact-number query, but the indexed snippet does not show the number. "
-                       + summary)[:400]
+            summary = (
+                "Returned for an exact-number query, but the indexed snippet does not show the number. " + summary
+            )[:400]
         return EvidenceItem(
             source_url=hit.url[:2048],
             source_type=EvidenceSourceType.SEARCH_RESULT,

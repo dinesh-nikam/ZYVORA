@@ -43,8 +43,9 @@ class ProfileOut(APIModel):
 
 class VerifyUrlIn(APIModel):
     url: str = Field(min_length=8, max_length=2048, examples=["https://t.me/telegram"])
-    phone: str | None = Field(default=None, max_length=32,
-                              description="Optional number to look for in the profile's public content")
+    phone: str | None = Field(
+        default=None, max_length=32, description="Optional number to look for in the profile's public content"
+    )
 
 
 class VerifyUrlOut(APIModel):

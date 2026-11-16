@@ -28,13 +28,11 @@ def apply_sort(stmt: Select[Any], sort: str | None, allowed: dict[str, Any], def
     field = spec.lstrip("-+")
     column = allowed.get(field)
     if column is None:
-        raise ValidationFailed("Unsupported sort field", code="invalid_sort",
-                               details=[{"allowed": sorted(allowed)}])
+        raise ValidationFailed("Unsupported sort field", code="invalid_sort", details=[{"allowed": sorted(allowed)}])
     return stmt.order_by(column.desc() if descending else column.asc())
 
 
 async def paginate(session: AsyncSession, stmt: Select[Any], page: int, page_size: int) -> Page[Any]:
-    total = int((await session.execute(select(func.count()).select_from(stmt.order_by(None).subquery())))
-                .scalar_one())
+    total = int((await session.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))).scalar_one())
     rows = (await session.execute(stmt.offset((page - 1) * page_size).limit(page_size))).unique().scalars().all()
     return Page(items=list(rows), total=total, page=page, page_size=page_size)

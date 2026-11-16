@@ -36,8 +36,9 @@ class RobotsPolicy:
 
     async def _load(self, origin: str, allowed_domains: frozenset[str]) -> tuple[RobotFileParser | None, bool]:
         try:
-            result = await self._http.fetch(f"{origin}/robots.txt", allowed_domains=allowed_domains,
-                                            max_bytes=512_000, target_label="robots")
+            result = await self._http.fetch(
+                f"{origin}/robots.txt", allowed_domains=allowed_domains, max_bytes=512_000, target_label="robots"
+            )
         except (OutboundBlocked, httpx.HTTPError):
             # RFC 9309 §2.3.1.4: unreachable robots.txt => assume complete disallow.
             logger.info("robots.txt unreachable; treating origin as disallowed", extra={"origin": origin})

@@ -3,9 +3,9 @@ from __future__ import annotations
 import uuid
 
 import httpx
-
 from app.models.enums import JobStatus
 from app.services.container import Container
+
 from tests.conftest import UserCtx, create_investigation
 
 
@@ -166,7 +166,7 @@ async def test_verify_url_endpoint(client: httpx.AsyncClient, analyst: UserCtx) 
     assert r.status_code == 200
     body = r.json()
     assert body["verification_status"] == "VERIFIED_PUBLIC_REFERENCE"
-    assert [s["stage"] for s in body["stages"]][0] == "url_syntax"
+    assert body["stages"][0]["stage"] == "url_syntax"
     no_phone = (await client.post("/api/v1/profiles/verify-url", headers=analyst.headers,
                                   json={"url": "https://t.me/acmehelp"})).json()
     assert no_phone["verification_status"] == "UNVERIFIED"

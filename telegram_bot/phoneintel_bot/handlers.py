@@ -1,373 +1,567 @@
-"""Aiogram 3 handlers for all PHONEINTEL Telegram Bot commands."""
+"""aiogram 3 handlers.
+
+All business logic lives in the PHONEINTEL backend; the bot only collects
+input (including the mandatory authorization basis, purpose and
+acknowledgement), shows progress, and delivers results/reports.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from typing import Any
 
-from aiogram import Router
-from aiogram.filters import Command
-from aiogram.types import BufferedInputFile, Message
+from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramAPIError
+from aiogram.filters import Command, CommandObject, StateFilter
+from aiogram.filters.callback_data import CallbackData
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from phoneintel_bot import texts
 from phoneintel_bot.client import BackendClient, BotAPIError
+from phoneintel_bot.config import BotSettings
+from phoneintel_bot.texts import h
 
 logger = logging.getLogger(__name__)
-router = Router()
+router = Router(name="phoneintel")
 
-MAX_TELEGRAM_MSG_LEN = 4000
+TERMINAL = {"completed", "failed", "cancelled"}
+REPORT_FORMATS = ("pdf", "json", "csv", "html")
 
 
-def split_message(text: str, max_len: int = MAX_TELEGRAM_MSG_LEN) -> list[str]:
-    """Split long text into multiple chunks adhering to Telegram length constraints."""
-    if len(text) <= max_len:
-        return [text]
-    chunks: list[str] = []
-    lines = text.split("\n")
-    current: list[str] = []
-    current_len = 0
-    for line in lines:
-        if current_len + len(line) + 1 > max_len:
-            chunks.append("\n".join(current))
-            current = [line]
-            current_len = len(line)
+# ------------------------------------------------------------- callback data
+class BasisCB(CallbackData, prefix="basis"):
+    basis: str
+
+
+class FlowCB(CallbackData, prefix="flow"):
+    action: str  # confirm | abort
+
+
+class JobCB(CallbackData, prefix="job"):
+    action: str  # cancel
+    inv: str
+
+
+class ReportCB(CallbackData, prefix="rep"):
+    inv: str
+    fmt: str
+
+
+class EraseCB(CallbackData, prefix="erase"):
+    action: str  # confirm | abort
+    target: str  # "all" or an investigation id
+
+
+class Discovery(StatesGroup):
+    basis = State()
+    purpose = State()
+    confirm = State()
+
+
+# ------------------------------------------------------------ progress jobs
+class ProgressTracker:
+    """Polls a discovery job and keeps one Telegram message updated."""
+
+    def __init__(self, backend: BackendClient, settings: BotSettings) -> None:
+        self.backend = backend
+        self.settings = settings
+        self._tasks: dict[int, asyncio.Task[None]] = {}
+        self.running: dict[int, str] = {}  # telegram user id -> investigation id
+
+    def start(self, bot: Bot, user_id: int, chat_id: int, message_id: int, investigation_id: str) -> None:
+        previous = self._tasks.get(user_id)
+        if previous is not None and not previous.done():
+            previous.cancel()
+        self.running[user_id] = investigation_id
+        task = asyncio.create_task(
+            self._track(bot, user_id, chat_id, message_id, investigation_id), name=f"track-{investigation_id}"
+        )
+        self._tasks[user_id] = task
+
+        def _done(t: asyncio.Task[None], uid: int = user_id) -> None:
+            if self._tasks.get(uid) is t:
+                self._tasks.pop(uid, None)
+                self.running.pop(uid, None)
+            if not t.cancelled() and t.exception() is not None:
+                logger.error("progress tracker crashed", exc_info=t.exception())
+
+        task.add_done_callback(_done)
+
+    async def wait_idle(self, timeout: float = 60) -> None:
+        if self._tasks:
+            await asyncio.wait_for(asyncio.gather(*self._tasks.values(), return_exceptions=True), timeout)
+
+    async def shutdown(self) -> None:
+        for task in list(self._tasks.values()):
+            task.cancel()
+        await asyncio.gather(*self._tasks.values(), return_exceptions=True)
+
+    async def _edit(
+        self, bot: Bot, chat_id: int, message_id: int, text: str, markup: InlineKeyboardMarkup | None = None
+    ) -> None:
+        try:
+            await bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id, reply_markup=markup)
+        except TelegramAPIError as exc:  # e.g. "message is not modified"
+            logger.debug("progress edit skipped: %s", type(exc).__name__)
+
+    async def _track(self, bot: Bot, uid: int, chat_id: int, message_id: int, inv_id: str) -> None:
+        started = time.monotonic()
+        cancel_kb = InlineKeyboardBuilder()
+        cancel_kb.button(text="✖ Cancel discovery", callback_data=JobCB(action="cancel", inv=inv_id))
+        last = ""
+        detail: dict[str, Any] = {}
+        while time.monotonic() - started < self.settings.discovery_timeout_seconds:
+            try:
+                detail = await self.backend.get_investigation(uid, inv_id)
+            except BotAPIError as exc:
+                await self._edit(bot, chat_id, message_id, texts.error_text(exc.code, exc.message))
+                return
+            inv = detail["investigation"]
+            job = detail.get("latest_job") or {}
+            if inv["status"] in TERMINAL:
+                break
+            text = (
+                f"🔎 <b>{h(inv['investigation_reference'])}</b>\n"
+                f"Status: {h(inv['status'])} · job {h(job.get('status', '?'))}"
+                + (f" · retry {job.get('retry_count')}" if job.get("retry_count") else "")
+                + f"\nElapsed: {int(time.monotonic() - started)} s"
+            )
+            if text != last:
+                await self._edit(bot, chat_id, message_id, text, cancel_kb.as_markup())
+                last = text
+            await asyncio.sleep(self.settings.poll_interval_seconds)
         else:
-            current.append(line)
-            current_len += len(line) + 1
-    if current:
-        chunks.append("\n".join(current))
-    return chunks
+            await self._edit(
+                bot, chat_id, message_id, "⏳ Discovery is still running. Check later with /history or /report."
+            )
+            return
+
+        inv = detail["investigation"]
+        if inv["status"] != "completed":
+            job = detail.get("latest_job") or {}
+            await self._edit(
+                bot,
+                chat_id,
+                message_id,
+                f"Investigation {h(inv['investigation_reference'])} ended: <b>{h(inv['status'])}</b>"
+                + (f" ({h(job.get('error_code'))})" if job.get("error_code") else ""),
+            )
+            return
+        await self._edit(bot, chat_id, message_id, f"✔ Discovery finished for {h(inv['investigation_reference'])}.")
+        try:
+            profiles = (await self.backend.list_profiles(uid, inv_id))["items"]
+        except BotAPIError as exc:
+            await bot.send_message(chat_id, texts.error_text(exc.code, exc.message))
+            return
+        chunks = texts.split_message(texts.results_text(inv, profiles))
+        for i, chunk in enumerate(chunks):
+            markup = report_keyboard(inv_id) if i == len(chunks) - 1 else None
+            await bot.send_message(chat_id, chunk, reply_markup=markup, disable_web_page_preview=True)
 
 
-async def reply_chunks(message: Message, text: str) -> None:
-    for chunk in split_message(text):
-        await message.reply(chunk)
+def report_keyboard(inv_id: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for fmt in REPORT_FORMATS:
+        kb.button(text=f"📄 {fmt.upper()}", callback_data=ReportCB(inv=inv_id, fmt=fmt))
+    kb.adjust(4)
+    return kb.as_markup()
 
 
+async def _fail(message: Message, exc: BotAPIError) -> None:
+    await message.answer(texts.error_text(exc.code, exc.message, exc.details))
+
+
+def _uid(message: Message) -> int:
+    if message.from_user is None:  # filtered out by AccessMiddleware; defensive
+        raise RuntimeError("message without sender")
+    return message.from_user.id
+
+
+def _args(command: CommandObject | None) -> list[str]:
+    return (command.args or "").split() if command else []
+
+
+# --------------------------------------------------------------- basics
 @router.message(Command("start"))
-async def start_handler(message: Message, backend: BackendClient) -> None:
-    text = (
-        "👋 Welcome to *PHONEINTEL Bot*!\n\n"
-        "PHONEINTEL provides phone-number intelligence and public social-profile discovery.\n\n"
-        "📌 *Getting Started:*\n"
-        "To perform investigations and view private history, link your Telegram account:\n"
-        "1. Generate a code in the PHONEINTEL web app or CLI (`phoneintel link-telegram`)\n"
-        "2. Send `/link YOUR_CODE` here.\n\n"
-        "Type `/help` to see all available commands."
-    )
-    await message.reply(text, parse_mode="Markdown")
+async def cmd_start(message: Message) -> None:
+    await message.answer(texts.START)
 
 
 @router.message(Command("help"))
-async def help_handler(message: Message) -> None:
-    text = (
-        "🔍 *PHONEINTEL Bot Commands:*\n\n"
-        "• `/link <CODE>` — Link your Telegram account\n"
-        "• `/unlink` — Disconnect your Telegram account\n"
-        "• `/validate <phone> [region]` — Check E.164 validity and numbering plan\n"
-        "• `/country <phone> [region]` — Country and region information\n"
-        "• `/carrier <phone> [region]` — Carrier and network operator information\n"
-        "• `/profile-links <phone> [purpose]` — Discover public social profiles\n"
-        "• `/search-public <phone>` — Search public web and open platforms\n"
-        "• `/report <investigation_id>` — Download comprehensive investigation report\n"
-        "• `/history` — View your recent investigations\n"
-        "• `/delete-data <investigation_id>` — Permanently erase investigation data\n"
-        "• `/privacy` — Privacy and compliance policy\n\n"
-        "_Note: All investigations require a legitimate purpose and authorization basis._"
-    )
-    await message.reply(text, parse_mode="Markdown")
+async def cmd_help(message: Message) -> None:
+    await message.answer(texts.HELP)
 
 
 @router.message(Command("privacy"))
-async def privacy_handler(message: Message) -> None:
-    text = (
-        "🛡️ *PHONEINTEL Privacy & Transparency Notice*\n\n"
-        "1. *Public-Source Only*: PHONEINTEL only searches authorized public search APIs, official platform APIs, "
-        "and robots.txt-permitted public pages. No private data or password protections are ever bypassed.\n"
-        "2. *No Number Enumeration*: The bot never brute-forces numbers or tests numbers "
-        "against private address books.\n"
-        "3. *Non-Attribution*: The presence of a public profile URL never proves ownership by the phone holder unless "
-        "explicit, verifiable public evidence links them.\n"
-        "4. *User Isolation*: Each user's history and reports are strictly isolated to their own linked account.\n"
-        "5. *Data Deletion*: You can permanently erase your investigation data at any time via `/delete-data <id>`."
-    )
-    await message.reply(text, parse_mode="Markdown")
+async def cmd_privacy(message: Message) -> None:
+    await message.answer(texts.PRIVACY)
 
 
 @router.message(Command("link"))
-async def link_handler(message: Message, backend: BackendClient) -> None:
-    args = (message.text or "").split()[1:]
-    if not args:
-        await message.reply("⚠️ Usage: `/link <CODE>`\nExample: `/link TG-449102`", parse_mode="Markdown")
+async def cmd_link(message: Message, command: CommandObject, backend: BackendClient) -> None:
+    args = _args(command)
+    if len(args) != 1:
+        await message.answer(
+            "Usage: <code>/link CODE</code> (create the code with <code>phoneintel link-telegram</code>)"
+        )
         return
-
-    code = args[0]
-    user_id = message.from_user.id if message.from_user else 0
     try:
-        data = await backend.link_account(user_id, code)
-        email = data.get("email")
-        await message.reply(f"✅ Successfully linked to PHONEINTEL account: *{email}*!", parse_mode="Markdown")
+        user = await backend.link_account(_uid(message), args[0])
     except BotAPIError as exc:
-        await message.reply(f"❌ Linking failed: {exc}")
+        await _fail(message, exc)
+        return
+    finally:
+        try:  # the code is single-use, but do not leave it in the chat history
+            await message.delete()
+        except TelegramAPIError as exc:
+            logger.warning("could not delete /link message: %s", type(exc).__name__)
+    await message.answer(f"✅ Linked to PHONEINTEL account <b>{h(user['email'])}</b>.")
 
 
 @router.message(Command("unlink"))
-async def unlink_handler(message: Message, backend: BackendClient) -> None:
-    user_id = message.from_user.id if message.from_user else 0
+async def cmd_unlink(message: Message, backend: BackendClient) -> None:
     try:
-        await backend.unlink_account(user_id)
-        await message.reply("✅ Telegram account unlinked successfully.")
+        result = await backend.unlink_account(_uid(message))
     except BotAPIError as exc:
-        await message.reply(f"❌ Unlink error: {exc}")
+        await _fail(message, exc)
+        return
+    await message.answer("Unlinked." if result.get("message") == "unlinked" else "This account was not linked.")
+
+
+# ----------------------------------------------------- phone intelligence
+async def _phone_command(message: Message, command: CommandObject, backend: BackendClient, kind: str) -> None:
+    args = _args(command)
+    if not args:
+        await message.answer(f"Usage: <code>/{h(command.command)} +919876543210</code>")
+        return
+    phone, region = (" ".join(args), None)
+    if len(args) == 2 and len(args[1]) == 2 and args[1].isalpha():
+        phone, region = args[0], args[1].upper()
+    uid = _uid(message)
+    try:
+        if kind == "validate":
+            data = await backend.validate_phone(uid, phone, region)
+            text = texts.phone_summary(
+                data,
+                title="Phone validation",
+                fields=[
+                    ("E.164", "e164"),
+                    ("International", "international"),
+                    ("Country", "country_name"),
+                    ("Country code", "country_code"),
+                    ("Number type", "number_type"),
+                    ("Validation", "validation_status"),
+                ],
+            )
+        else:
+            data = await backend.phone_metadata(uid, phone, region)
+            fields = (
+                [
+                    ("E.164", "e164"),
+                    ("Country", "country_name"),
+                    ("Country code", "country_code"),
+                    ("Region", "region_code"),
+                    ("Region description", "region_description"),
+                    ("Time zones", "timezones"),
+                ]
+                if kind == "country"
+                else [
+                    ("E.164", "e164"),
+                    ("Carrier", "carrier"),
+                    ("Carrier source", "carrier_source"),
+                    ("Number type", "number_type"),
+                    ("Validation", "validation_status"),
+                ]
+            )
+            text = texts.phone_summary(data, title=kind.capitalize(), fields=fields)
+    except BotAPIError as exc:
+        await _fail(message, exc)
+        return
+    await message.answer(text)
 
 
 @router.message(Command("validate"))
-async def validate_handler(message: Message, backend: BackendClient) -> None:
-    args = (message.text or "").split()[1:]
-    if not args:
-        usage_text = "⚠️ Usage: `/validate <phone> [region]`\nExample: `/validate +919876543210`"
-        await message.reply(usage_text, parse_mode="Markdown")
-        return
-
-    phone = args[0]
-    region = args[1] if len(args) > 1 else None
-    user_id = message.from_user.id if message.from_user else 0
-
-    try:
-        res = await backend.validate_phone(user_id, phone, region)
-        lines = [
-            "📱 *Phone Validation Summary*",
-            f"• *E.164 Standard:* `{res.get('e164')}`",
-            f"• *International:* `{res.get('international')}`",
-            f"• *National:* `{res.get('national')}`",
-            f"• *Country:* {res.get('country_name')} (+{res.get('country_code')})",
-            f"• *Region Code:* {res.get('region_code') or 'N/A'}",
-            f"• *Number Type:* {res.get('number_type')}",
-            f"• *Status:* {res.get('validation_status')}",
-            f"• *Is Valid:* {'Yes' if res.get('is_valid') else 'No'}",
-        ]
-        limitations = res.get("limitations", [])
-        if limitations:
-            lines.append("\n⚠️ *Limitations:*")
-            lines.extend(f"• {lim}" for lim in limitations)
-
-        await reply_chunks(message, "\n".join(lines))
-    except BotAPIError as exc:
-        if exc.code == "telegram_not_linked":
-            await message.reply("⚠️ Please link your Telegram account first using `/link <CODE>`.")
-        else:
-            await message.reply(f"❌ Validation error: {exc}")
+async def cmd_validate(message: Message, command: CommandObject, backend: BackendClient) -> None:
+    await _phone_command(message, command, backend, "validate")
 
 
 @router.message(Command("country"))
-async def country_handler(message: Message, backend: BackendClient) -> None:
-    args = (message.text or "").split()[1:]
-    if not args:
-        usage_text = "⚠️ Usage: `/country <phone> [region]`\nExample: `/country +12025550123`"
-        await message.reply(usage_text, parse_mode="Markdown")
-        return
-
-    phone = args[0]
-    region = args[1] if len(args) > 1 else None
-    user_id = message.from_user.id if message.from_user else 0
-
-    try:
-        res = await backend.validate_phone(user_id, phone, region)
-        text = (
-            f"🌍 *Country & Regional Info:*\n"
-            f"• *Number:* `{res.get('e164')}`\n"
-            f"• *Country:* {res.get('country_name')} (+{res.get('country_code')})\n"
-            f"• *Region Code:* {res.get('region_code') or 'N/A'}\n"
-            f"• *Number Type:* {res.get('number_type')}"
-        )
-        await message.reply(text, parse_mode="Markdown")
-    except BotAPIError as exc:
-        if exc.code == "telegram_not_linked":
-            await message.reply("⚠️ Please link your Telegram account first using `/link <CODE>`.")
-        else:
-            await message.reply(f"❌ Error: {exc}")
+async def cmd_country(message: Message, command: CommandObject, backend: BackendClient) -> None:
+    await _phone_command(message, command, backend, "country")
 
 
 @router.message(Command("carrier"))
-async def carrier_handler(message: Message, backend: BackendClient) -> None:
-    args = (message.text or "").split()[1:]
+async def cmd_carrier(message: Message, command: CommandObject, backend: BackendClient) -> None:
+    await _phone_command(message, command, backend, "carrier")
+
+
+# ------------------------------------------------------------- discovery
+async def _begin_discovery(
+    message: Message, command: CommandObject, state: FSMContext, backend: BackendClient, mode: str
+) -> None:
+    args = _args(command)
     if not args:
-        usage_text = "⚠️ Usage: `/carrier <phone> [region]`\nExample: `/carrier +919876543210`"
-        await message.reply(usage_text, parse_mode="Markdown")
+        await message.answer(f"Usage: <code>/{h(command.command)} +919876543210</code>")
         return
-
-    phone = args[0]
-    region = args[1] if len(args) > 1 else None
-    user_id = message.from_user.id if message.from_user else 0
-
     try:
-        res = await backend.phone_metadata(user_id, phone, region)
-        tzs = res.get("timezones", [])
-        text = (
-            f"📡 *Carrier & Network Metadata:*\n"
-            f"• *Number:* `{res.get('e164')}`\n"
-            f"• *Carrier:* {res.get('carrier') or 'Unavailable / Unallocated'}\n"
-            f"• *Source:* {res.get('carrier_source') or 'N/A'}\n"
-            f"• *Timezones:* {', '.join(tzs) if tzs else 'N/A'}\n"
-            f"• *Provider:* {res.get('metadata_provider')}"
-        )
-        await message.reply(text, parse_mode="Markdown")
+        intel = await backend.validate_phone(_uid(message), " ".join(args))
     except BotAPIError as exc:
-        if exc.code == "telegram_not_linked":
-            await message.reply("⚠️ Please link your Telegram account first using `/link <CODE>`.")
-        else:
-            await message.reply(f"❌ Error: {exc}")
-
-
-@router.message(Command("profile-links"))
-async def profile_links_handler(message: Message, backend: BackendClient) -> None:
-    args = (message.text or "").split(maxsplit=2)[1:]
-    if not args:
-        usage_text = (
-            "⚠️ Usage: `/profile-links <phone> [purpose]`\n"
-            "Example: `/profile-links +919876543210 Triage ticket`"
-        )
-        await message.reply(usage_text, parse_mode="Markdown")
+        await _fail(message, exc)
         return
+    if not intel.get("is_valid"):
+        await message.answer(
+            f"⚠️ {h(intel.get('e164'))} is not a valid number "
+            f"({h(intel.get('validation_status'))}); investigations require a valid number."
+        )
+        return
+    await state.clear()
+    await state.set_state(Discovery.basis)
+    await state.update_data(phone=intel["e164"], mode=mode)
+    kb = InlineKeyboardBuilder()
+    for key, label in texts.BASES.items():
+        kb.button(text=label, callback_data=BasisCB(basis=key))
+    kb.button(text="Cancel", callback_data=FlowCB(action="abort"))
+    kb.adjust(1)
+    await message.answer(
+        f"Investigating <code>{h(intel['e164'])}</code> ({h(intel.get('country_name'))}).\n\n"
+        "<b>Step 1/3 - authorization basis.</b> Which basis authorises this investigation?",
+        reply_markup=kb.as_markup(),
+    )
 
-    phone = args[0]
-    purpose = args[1] if len(args) > 1 else "Telegram bot investigation"
-    user_id = message.from_user.id if message.from_user else 0
 
+@router.message(Command("profile_links", "profile-links", "profilelinks"))
+async def cmd_profile_links(
+    message: Message, command: CommandObject, state: FSMContext, backend: BackendClient
+) -> None:
+    await _begin_discovery(message, command, state, backend, "profile")
+
+
+@router.message(Command("search_public", "search-public", "searchpublic"))
+async def cmd_search_public(
+    message: Message, command: CommandObject, state: FSMContext, backend: BackendClient
+) -> None:
+    await _begin_discovery(message, command, state, backend, "search")
+
+
+@router.callback_query(Discovery.basis, BasisCB.filter())
+async def on_basis(query: CallbackQuery, callback_data: BasisCB, state: FSMContext, bot: Bot) -> None:
+    if callback_data.basis not in texts.BASES:
+        await query.answer("Unknown basis", show_alert=True)
+        return
+    await state.update_data(basis=callback_data.basis)
+    await state.set_state(Discovery.purpose)
+    await query.answer()
+    if query.message is not None:
+        await bot.send_message(
+            query.message.chat.id,
+            f"Basis: <b>{h(texts.BASES[callback_data.basis])}</b>\n\n<b>Step 2/3 - purpose.</b> Describe why this "
+            "investigation is necessary (10-1000 characters, e.g. a ticket or case reference). /cancel aborts.",
+        )
+
+
+@router.message(Discovery.purpose, F.text, ~F.text.startswith("/"))
+async def on_purpose(message: Message, state: FSMContext) -> None:
+    purpose = (message.text or "").strip()
+    if not 10 <= len(purpose) <= 1000:
+        await message.answer("The purpose must be between 10 and 1000 characters. Please try again.")
+        return
+    data = await state.update_data(purpose=purpose)
+    await state.set_state(Discovery.confirm)
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ I confirm - start", callback_data=FlowCB(action="confirm"))
+    kb.button(text="Cancel", callback_data=FlowCB(action="abort"))
+    kb.adjust(1)
+    mode = "public web index search only" if data["mode"] == "search" else "public profile-link discovery"
+    await message.answer(
+        f"<b>Step 3/3 - confirm</b>\nNumber: <code>{h(data['phone'])}</code>\nMode: {mode}\n"
+        f"Basis: {h(texts.BASES[data['basis']])}\nPurpose: {h(purpose)}\n\n<i>{h(texts.ACK)}</i>",
+        reply_markup=kb.as_markup(),
+    )
+
+
+@router.callback_query(
+    StateFilter(Discovery.basis, Discovery.purpose, Discovery.confirm), FlowCB.filter(F.action == "abort")
+)
+async def on_abort(query: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+    await state.clear()
+    await query.answer("Cancelled")
+    if query.message is not None:
+        await bot.send_message(query.message.chat.id, "Cancelled. Nothing was created.")
+
+
+@router.callback_query(Discovery.confirm, FlowCB.filter(F.action == "confirm"))
+async def on_confirm(
+    query: CallbackQuery, state: FSMContext, backend: BackendClient, tracker: ProgressTracker, bot: Bot
+) -> None:
+    data = await state.get_data()
+    await state.clear()  # drop the number from FSM storage immediately
+    uid = query.from_user.id
+    await query.answer("Starting…")
+    message = query.message
+    if message is None:
+        return
     try:
-        status_msg = await message.reply("⏳ Creating investigation and initiating discovery...")
-        inv = await backend.create_investigation(user_id, phone, purpose=purpose)
-        inv_id = inv["id"]
-
-        await backend.start_discovery(user_id, inv_id)
-
-        # Poll for completion up to 30 seconds
-        for _ in range(15):
-            await asyncio.sleep(2)
-            detail = await backend.get_investigation(user_id, inv_id)
-            inv_status = detail.get("investigation", {}).get("status")
-            if inv_status in ("completed", "failed", "cancelled"):
-                break
-
-        profiles_data = await backend.list_profiles(user_id, inv_id)
-        profiles = profiles_data.get("items", [])
-
-        lines = [
-            f"🎯 *Investigation Results:* `{inv.get('investigation_reference')}`",
-            f"• *Status:* {inv_status}",
-            f"• *Profiles Discovered:* {len(profiles)}\n",
-        ]
-
-        if not profiles:
-            lines.append("No public profile candidates located.")
-        else:
-            for p in profiles[:15]:
-                v_stat = p.get("verification_status", "UNVERIFIED")
-                icon = "✅" if "VERIFIED" in v_stat else ("🔹" if "CANDIDATE" in v_stat else "▫️")
-                lines.append(
-                    f"{icon} *{p.get('platform', '').upper()}*\n"
-                    f"  URL: {p.get('canonical_url')}\n"
-                    f"  Status: `{v_stat}` (Confidence: {p.get('confidence_score', 0)}/100)\n"
-                    f"  Evidence: _{p.get('evidence_description')}_\n"
-                )
-
-        lines.append(f"\n_For full downloadable report, use:_ `/report {inv_id}`")
-        await reply_chunks(status_msg, "\n".join(lines))
+        inv = await backend.create_investigation(uid, phone=data["phone"], purpose=data["purpose"], basis=data["basis"])
+        await backend.start_discovery(
+            uid, inv["id"], live_checks=data["mode"] != "search", idempotency_key=f"tg-query-{query.id}"[:128]
+        )
     except BotAPIError as exc:
-        if exc.code == "telegram_not_linked":
-            await message.reply("⚠️ Please link your Telegram account first using `/link <CODE>`.")
-        else:
-            await message.reply(f"❌ Discovery error: {exc}")
+        await bot.send_message(message.chat.id, texts.error_text(exc.code, exc.message, exc.details))
+        return
+    progress = await bot.send_message(
+        message.chat.id, f"🔎 Investigation <b>{h(inv['investigation_reference'])}</b> created; discovery queued…"
+    )
+    tracker.start(bot, uid, message.chat.id, progress.message_id, inv["id"])
 
 
-@router.message(Command("search-public"))
-async def search_public_handler(message: Message, backend: BackendClient) -> None:
-    # Delegates to profile_links
-    await profile_links_handler(message, backend)
-
-
-@router.message(Command("history"))
-async def history_handler(message: Message, backend: BackendClient) -> None:
-    user_id = message.from_user.id if message.from_user else 0
+@router.callback_query(JobCB.filter(F.action == "cancel"))
+async def on_cancel_job(query: CallbackQuery, callback_data: JobCB, backend: BackendClient) -> None:
     try:
-        data = await backend.list_investigations(user_id, page=1, page_size=10)
-        items = data.get("items", [])
-        total = data.get("total", 0)
-
-        if not items:
-            await message.reply("📭 No investigations recorded for your account.")
-            return
-
-        lines = [f"📂 *Your Investigation History (Total: {total})*\n"]
-        for item in items:
-            lines.append(
-                f"• *Ref:* `{item.get('investigation_reference')}`\n"
-                f"  ID: `{item.get('id')}`\n"
-                f"  Status: `{item.get('status')}` | Profiles: {item.get('profile_count', 0)}\n"
-                f"  Date: {str(item.get('created_at'))[:16]}\n"
-            )
-        await reply_chunks(message, "\n".join(lines))
+        await backend.cancel_investigation(query.from_user.id, callback_data.inv)
     except BotAPIError as exc:
-        if exc.code == "telegram_not_linked":
-            await message.reply("⚠️ Please link your Telegram account first using `/link <CODE>`.")
-        else:
-            await message.reply(f"❌ History error: {exc}")
+        await query.answer(exc.message[:180], show_alert=True)
+        return
+    await query.answer("Cancellation requested")
+
+
+@router.message(Command("cancel"))
+async def cmd_cancel(message: Message, state: FSMContext, backend: BackendClient, tracker: ProgressTracker) -> None:
+    if await state.get_state() is not None:
+        await state.clear()
+        await message.answer("Dialog cancelled. Nothing was created.")
+        return
+    inv_id = tracker.running.get(_uid(message))
+    if inv_id is None:
+        await message.answer("Nothing to cancel.")
+        return
+    try:
+        await backend.cancel_investigation(_uid(message), inv_id)
+    except BotAPIError as exc:
+        await _fail(message, exc)
+        return
+    await message.answer("Cancellation requested.")
+
+
+@router.message(StateFilter(Discovery.basis, Discovery.confirm), F.text, ~F.text.startswith("/"))
+async def on_unexpected_text(message: Message) -> None:
+    await message.answer("Please use the buttons above, or /cancel.")
+
+
+# ---------------------------------------------------------------- reports
+async def _send_report(bot: Bot, chat_id: int, uid: int, backend: BackendClient, inv_id: str, fmt: str) -> None:
+    try:
+        report = await backend.get_report(uid, inv_id)
+        content, filename = await backend.export_report(uid, inv_id, fmt)
+    except BotAPIError as exc:
+        await bot.send_message(chat_id, texts.error_text(exc.code, exc.message))
+        return
+    s = report["summary"]
+    caption = (
+        f"<b>{h(report['investigation_reference'])}</b> · {s['discovered_urls']} URL(s) · "
+        f"{s['verified_public_references']} verified · {s['public_candidates']} candidates"
+    )
+    await bot.send_document(
+        chat_id, BufferedInputFile(content, filename=filename), caption=caption, protect_content=True
+    )
 
 
 @router.message(Command("report"))
-async def report_handler(message: Message, backend: BackendClient) -> None:
-    args = (message.text or "").split()[1:]
-    if not args:
-        usage_text = (
-            "⚠️ Usage: `/report <investigation_id>`\n"
-            "Example: `/report 11111111-1111-1111-1111-111111111111`"
-        )
-        await message.reply(usage_text, parse_mode="Markdown")
-        return
-
-    inv_id = args[0]
-    user_id = message.from_user.id if message.from_user else 0
-
+async def cmd_report(message: Message, command: CommandObject, backend: BackendClient, bot: Bot) -> None:
+    args = _args(command)
+    fmt = "pdf"
+    if args and args[-1].lower() in REPORT_FORMATS:
+        fmt = args.pop().lower()
+    uid = _uid(message)
     try:
-        report_data = await backend.get_report(user_id, inv_id)
-        summary = report_data.get("summary", {})
-        text = (
-            f"📊 *Investigation Report Summary*\n"
-            f"• *Reference:* `{report_data.get('investigation_reference')}`\n"
-            f"• *Discovered Profiles:* {summary.get('discovered_urls', 0)}\n"
-            f"• *Verified Public References:* {summary.get('verified_public_references', 0)}\n"
-            f"• *Public Candidates:* {summary.get('public_candidates', 0)}\n"
-            f"• *Unverified:* {summary.get('unverified', 0)}\n"
-        )
-        await message.reply(text, parse_mode="Markdown")
-
-        # Also deliver the PDF document file
-        pdf_bytes = await backend.export_report(user_id, inv_id, fmt="pdf")
-        filename = f"{report_data.get('investigation_reference', 'report')}.pdf"
-        file = BufferedInputFile(pdf_bytes, filename=filename)
-        await message.reply_document(file, caption=f"📄 Full PDF Report: {filename}")
+        inv_id = await backend.resolve_investigation(uid, args[0] if args else None)
     except BotAPIError as exc:
-        if exc.code == "telegram_not_linked":
-            await message.reply("⚠️ Please link your Telegram account first using `/link <CODE>`.")
-        else:
-            await message.reply(f"❌ Report error: {exc}")
-
-
-@router.message(Command("delete-data"))
-async def delete_data_handler(message: Message, backend: BackendClient) -> None:
-    args = (message.text or "").split()[1:]
-    if not args:
-        await message.reply("⚠️ Usage: `/delete-data <investigation_id>`", parse_mode="Markdown")
+        await _fail(message, exc)
         return
+    if inv_id is None:
+        await message.answer("No matching investigation found.")
+        return
+    await _send_report(bot, message.chat.id, uid, backend, inv_id, fmt)
 
-    inv_id = args[0]
-    user_id = message.from_user.id if message.from_user else 0
 
+@router.callback_query(ReportCB.filter())
+async def on_report(query: CallbackQuery, callback_data: ReportCB, backend: BackendClient, bot: Bot) -> None:
+    if callback_data.fmt not in REPORT_FORMATS or query.message is None:
+        await query.answer("Unsupported format", show_alert=True)
+        return
+    await query.answer("Preparing report…")
+    await _send_report(bot, query.message.chat.id, query.from_user.id, backend, callback_data.inv, callback_data.fmt)
+
+
+@router.message(Command("history"))
+async def cmd_history(message: Message, backend: BackendClient) -> None:
     try:
-        await backend.delete_investigation(user_id, inv_id)
-        msg = f"🗑️ Investigation `{inv_id}` and all associated evidence have been permanently deleted."
-        await message.reply(msg, parse_mode="Markdown")
+        data = await backend.list_investigations(_uid(message), page_size=10)
     except BotAPIError as exc:
-        if exc.code == "telegram_not_linked":
-            await message.reply("⚠️ Please link your Telegram account first using `/link <CODE>`.")
+        await _fail(message, exc)
+        return
+    items = data.get("items") or []
+    if not items:
+        await message.answer("You have no investigations.")
+        return
+    lines = [f"<b>Your investigations</b> ({data.get('total', len(items))} total, newest first)"]
+    for item in items:
+        lines.append(
+            f"• <code>{h(item['investigation_reference'])}</code> {h(item['status'])} · "
+            f"{item.get('profile_count', 0)} profile(s) · {h(str(item['created_at'])[:16].replace('T', ' '))}"
+        )
+    lines.append("\n/report REFERENCE downloads a report.")
+    await message.answer("\n".join(lines))
+
+
+# ---------------------------------------------------------------- erasure
+@router.message(Command("delete_data", "delete-data", "deletedata"))
+async def cmd_delete_data(message: Message, command: CommandObject, backend: BackendClient) -> None:
+    args = _args(command)
+    uid = _uid(message)
+    target = "all"
+    what = "ALL of your investigation data"
+    if args:
+        try:
+            inv_id = await backend.resolve_investigation(uid, args[0])
+        except BotAPIError as exc:
+            await _fail(message, exc)
+            return
+        if inv_id is None:
+            await message.answer("No matching investigation found.")
+            return
+        target, what = inv_id, f"investigation <code>{h(args[0])}</code>"
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🗑 Yes, erase permanently", callback_data=EraseCB(action="confirm", target=target))
+    kb.button(text="Cancel", callback_data=EraseCB(action="abort", target=target))
+    kb.adjust(1)
+    await message.answer(f"Permanently erase {what}? This cannot be undone.", reply_markup=kb.as_markup())
+
+
+@router.callback_query(EraseCB.filter())
+async def on_erase(query: CallbackQuery, callback_data: EraseCB, backend: BackendClient, bot: Bot) -> None:
+    if callback_data.action != "confirm":
+        await query.answer("Nothing was erased")
+        return
+    try:
+        if callback_data.target == "all":
+            result = await backend.erase_all(query.from_user.id)
+            text = f"🗑 Erased {result.get('investigations_erased', 0)} investigation(s)."
         else:
-            await message.reply(f"❌ Deletion error: {exc}")
+            await backend.delete_investigation(query.from_user.id, callback_data.target)
+            text = "🗑 Investigation erased."
+    except BotAPIError as exc:
+        await query.answer(exc.message[:180], show_alert=True)
+        return
+    await query.answer("Erased")
+    if query.message is not None:
+        await bot.send_message(query.message.chat.id, text)
+
+
+@router.message(F.text.startswith("/"))
+async def unknown_command(message: Message) -> None:
+    await message.answer("Unknown command. See /help.")

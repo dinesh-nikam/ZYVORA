@@ -36,7 +36,9 @@ class DiscoveredProfile(UUIDPrimaryKey, Base):
 
     investigation: Mapped[Investigation] = relationship(back_populates="profiles")
     evidence: Mapped[list[EvidenceSource]] = relationship(
-        back_populates="profile", cascade="all, delete-orphan", passive_deletes=True,
+        back_populates="profile",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
         order_by="EvidenceSource.collected_at",
     )
 

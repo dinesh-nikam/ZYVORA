@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from app.models.enums import ConfidenceLevel
 from app.services.verification.confidence import CAP_WITHOUT_PHONE_REFERENCE, FACTOR_POINTS, level_for, score
 
@@ -22,8 +21,9 @@ def test_third_party_cooccurrence_is_low() -> None:
 
 
 def test_without_phone_reference_score_is_capped() -> None:
-    result = score({"profile_exists_confirmed", "official_api_confirmation", "user_provided_link",
-                    "multiple_independent_sources"})
+    result = score(
+        {"profile_exists_confirmed", "official_api_confirmation", "user_provided_link", "multiple_independent_sources"}
+    )
     assert result.score <= CAP_WITHOUT_PHONE_REFERENCE
     assert result.level in (ConfidenceLevel.LOW, ConfidenceLevel.NONE)
     assert any(f["factor"] == "cap_no_phone_reference" for f in result.factors)
@@ -45,7 +45,9 @@ def test_every_factor_is_explained() -> None:
     assert result.score == 100
 
 
-@pytest.mark.parametrize(("value", "level"), [(100, "HIGH"), (75, "HIGH"), (74, "MEDIUM"), (45, "MEDIUM"),
-                                              (44, "LOW"), (15, "LOW"), (14, "NONE"), (0, "NONE")])
+@pytest.mark.parametrize(
+    ("value", "level"),
+    [(100, "HIGH"), (75, "HIGH"), (74, "MEDIUM"), (45, "MEDIUM"), (44, "LOW"), (15, "LOW"), (14, "NONE"), (0, "NONE")],
+)
 def test_level_boundaries(value: int, level: str) -> None:
     assert level_for(value).value == level

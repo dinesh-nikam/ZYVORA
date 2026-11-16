@@ -130,11 +130,15 @@ class PhoneIntelService:
         number = self.parse(raw, region)
         is_valid = phonenumbers.is_valid_number(number)
         possibility = phonenumbers.is_possible_number_with_reason(number)
-        is_possible = possibility in (phonenumbers.ValidationResult.IS_POSSIBLE,
-                                      phonenumbers.ValidationResult.IS_POSSIBLE_LOCAL_ONLY)
+        is_possible = possibility in (
+            phonenumbers.ValidationResult.IS_POSSIBLE,
+            phonenumbers.ValidationResult.IS_POSSIBLE_LOCAL_ONLY,
+        )
         status = (
-            ValidationStatus.VALID if is_valid
-            else ValidationStatus.POSSIBLE_NOT_VALID if is_possible
+            ValidationStatus.VALID
+            if is_valid
+            else ValidationStatus.POSSIBLE_NOT_VALID
+            if is_possible
             else ValidationStatus.INVALID
         )
         region_code = phonenumbers.region_code_for_number(number)
@@ -169,7 +173,6 @@ class PhoneIntelService:
             raise ValidationFailed(
                 "Investigations require a valid phone number",
                 code="invalid_phone_number",
-                details=[{"validation_status": intel.validation_status.value,
-                          "reason": intel.possibility_reason}],
+                details=[{"validation_status": intel.validation_status.value, "reason": intel.possibility_reason}],
             )
         return intel

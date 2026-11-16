@@ -33,11 +33,13 @@ def record(
     leaked = _FORBIDDEN_META_KEYS & meta.keys()
     if leaked:
         raise ValueError(f"audit metadata must not contain sensitive keys: {sorted(leaked)}")
-    AuditRepository(session).add(AuditLog(
-        actor_id=ctx.actor_id,
-        action=action,
-        resource_type=resource_type,
-        resource_id=str(resource_id) if resource_id is not None else None,
-        ip_address=(ctx.ip_address or None),
-        meta={"via": ctx.via, **meta},
-    ))
+    AuditRepository(session).add(
+        AuditLog(
+            actor_id=ctx.actor_id,
+            action=action,
+            resource_type=resource_type,
+            resource_id=str(resource_id) if resource_id is not None else None,
+            ip_address=(ctx.ip_address or None),
+            meta={"via": ctx.via, **meta},
+        )
+    )

@@ -87,25 +87,31 @@ async def build_container(
         searxng_http = SafeHttpClient(settings, resolver=resolver, transport=transport, allow_private_hosts=[host])
         closeables.append(searxng_http)
 
-    providers = search_providers if search_providers is not None else build_search_providers(
-        settings, http, searxng_http)
+    providers = (
+        search_providers if search_providers is not None else build_search_providers(settings, http, searxng_http)
+    )
 
     if platform_clients is None:
-        platform_clients = {"github": GitHubClient(http, settings.github_token.get_secret_value()
-                                                   if settings.github_token else None)}
+        platform_clients = {
+            "github": GitHubClient(http, settings.github_token.get_secret_value() if settings.github_token else None)
+        }
         if settings.youtube_api_key:
             platform_clients["youtube"] = YouTubeClient(http, settings.youtube_api_key.get_secret_value())
         if settings.reddit_client_id and settings.reddit_client_secret:
-            platform_clients["reddit"] = RedditClient(http, settings.reddit_client_id.get_secret_value(),
-                                                      settings.reddit_client_secret.get_secret_value(),
-                                                      settings.outbound_user_agent)
+            platform_clients["reddit"] = RedditClient(
+                http,
+                settings.reddit_client_id.get_secret_value(),
+                settings.reddit_client_secret.get_secret_value(),
+                settings.outbound_user_agent,
+            )
         if settings.telegram_bot_token:
             platform_clients["telegram"] = TelegramBotApiClient(http, settings.telegram_bot_token.get_secret_value())
 
     carrier = None
     if settings.twilio_account_sid and settings.twilio_auth_token:
-        carrier = TwilioCarrierProvider(http, settings.twilio_account_sid.get_secret_value(),
-                                        settings.twilio_auth_token.get_secret_value())
+        carrier = TwilioCarrierProvider(
+            http, settings.twilio_account_sid.get_secret_value(), settings.twilio_auth_token.get_secret_value()
+        )
 
     container = Container(
         settings=settings,
@@ -117,11 +123,15 @@ async def build_container(
         tokens=TokenService(settings),
         http=http,
         phone=PhoneIntelService(),
-        verification=VerificationEngine(http, RobotsPolicy(http), platform_clients,
-                                        respect_robots=settings.respect_robots_txt),
-        discovery=DiscoveryService(providers, max_queries=settings.search_max_queries,
-                                   results_per_query=settings.search_results_per_query,
-                                   concurrency=settings.discovery_max_concurrency),
+        verification=VerificationEngine(
+            http, RobotsPolicy(http), platform_clients, respect_robots=settings.respect_robots_txt
+        ),
+        discovery=DiscoveryService(
+            providers,
+            max_queries=settings.search_max_queries,
+            results_per_query=settings.search_results_per_query,
+            concurrency=settings.discovery_max_concurrency,
+        ),
         events=EventBus(redis_client),
         rate_limiter=RateLimiter(redis_client),
         jobs=InlineJobQueue(_noop),  # replaced below

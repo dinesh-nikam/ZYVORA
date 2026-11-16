@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import httpx
-from fastapi.testclient import TestClient
-
 from app.main import create_app
 from app.services.container import Container
+from fastapi.testclient import TestClient
+
 from tests.conftest import UserCtx, create_investigation, promote, register_and_login
 
 
@@ -96,7 +96,7 @@ async def test_telegram_link_and_delegation(client: httpx.AsyncClient, container
     assert reuse.status_code == 422  # one-time code
 
     tg = {**svc, "X-Telegram-User-Id": "4242"}
-    inv = await create_investigation(client, UserCtx("", "", "", "", ""), ) if False else None  # noqa: SIM108
+    inv = None
     created = await client.post("/api/v1/investigations", headers=tg, json={
         "phone": "+919876543210", "purpose": "Telegram initiated check", "authorization_basis": "own_number",
         "acknowledge_limitations": True})

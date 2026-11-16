@@ -22,14 +22,13 @@ from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import select
-
 from app.core.config import Settings
 from app.core.permissions import BUILTIN_ROLES
 from app.db.base import Base
 from app.main import create_app
 from app.models import Role
 from app.services.container import Container, build_container
+from sqlalchemy import select
 
 PHONE = "+919876543210"
 PUBLIC_IP = "93.184.216.34"

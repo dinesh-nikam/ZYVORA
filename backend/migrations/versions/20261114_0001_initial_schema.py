@@ -4,6 +4,7 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-11-14
 """
+
 from __future__ import annotations
 
 import uuid
@@ -25,8 +26,15 @@ TS = sa.DateTime(timezone=True)
 # Permission sets are frozen here on purpose: later permission changes must ship
 # as their own migration instead of silently rewriting history.
 _ANALYST = [
-    "phone:validate", "investigation:create", "investigation:read", "investigation:delete",
-    "discovery:run", "profile:verify", "report:read", "apikey:manage", "self:data",
+    "phone:validate",
+    "investigation:create",
+    "investigation:read",
+    "investigation:delete",
+    "discovery:run",
+    "profile:verify",
+    "report:read",
+    "apikey:manage",
+    "self:data",
 ]
 _ROLES = {
     "admin": [*_ANALYST, "investigation:read_any", "admin:users", "admin:audit", "admin:health"],
@@ -160,8 +168,12 @@ def upgrade() -> None:
         sa.Column("metadata_provider", sa.String(128), nullable=False),
         sa.Column("details", JSONType, nullable=False),
         _ts("checked_at", nullable=False),
-        sa.ForeignKeyConstraint(["investigation_id"], ["investigations.id"],
-                                name="fk_phone_intelligence_investigation_id_investigations", ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["investigation_id"],
+            ["investigations.id"],
+            name="fk_phone_intelligence_investigation_id_investigations",
+            ondelete="CASCADE",
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_phone_intelligence"),
         sa.UniqueConstraint("investigation_id", name="uq_phone_intelligence_investigation_id"),
     )
@@ -182,16 +194,27 @@ def upgrade() -> None:
         sa.Column("error_code", sa.String(64), nullable=True),
         sa.Column("error_detail", sa.Text(), nullable=True),
         _ts("created_at", nullable=False, server_now=True),
-        sa.ForeignKeyConstraint(["investigation_id"], ["investigations.id"],
-                                name="fk_investigation_jobs_investigation_id_investigations", ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["investigation_id"],
+            ["investigations.id"],
+            name="fk_investigation_jobs_investigation_id_investigations",
+            ondelete="CASCADE",
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_investigation_jobs"),
     )
-    op.create_index("ix_investigation_jobs_investigation_id_created_at", "investigation_jobs",
-                    ["investigation_id", "created_at"])
+    op.create_index(
+        "ix_investigation_jobs_investigation_id_created_at", "investigation_jobs", ["investigation_id", "created_at"]
+    )
     op.create_index("ix_investigation_jobs_status", "investigation_jobs", ["status"])
     active = sa.text("status IN ('queued', 'running', 'retrying')")
-    op.create_index("uq_investigation_jobs_active", "investigation_jobs", ["investigation_id", "job_type"],
-                    unique=True, postgresql_where=active, sqlite_where=active)
+    op.create_index(
+        "uq_investigation_jobs_active",
+        "investigation_jobs",
+        ["investigation_id", "job_type"],
+        unique=True,
+        postgresql_where=active,
+        sqlite_where=active,
+    )
 
     op.create_table(
         "discovered_profiles",
@@ -211,15 +234,23 @@ def upgrade() -> None:
         sa.Column("limitations", JSONType, nullable=False),
         _ts("discovered_at", nullable=False),
         _ts("verified_at"),
-        sa.ForeignKeyConstraint(["investigation_id"], ["investigations.id"],
-                                name="fk_discovered_profiles_investigation_id_investigations", ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["investigation_id"],
+            ["investigations.id"],
+            name="fk_discovered_profiles_investigation_id_investigations",
+            ondelete="CASCADE",
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_discovered_profiles"),
         sa.UniqueConstraint("investigation_id", "canonical_url", name="uq_discovered_profiles_investigation_canonical"),
     )
-    op.create_index("ix_discovered_profiles_investigation_id_platform", "discovered_profiles",
-                    ["investigation_id", "platform"])
-    op.create_index("ix_discovered_profiles_investigation_id_status", "discovered_profiles",
-                    ["investigation_id", "verification_status"])
+    op.create_index(
+        "ix_discovered_profiles_investigation_id_platform", "discovered_profiles", ["investigation_id", "platform"]
+    )
+    op.create_index(
+        "ix_discovered_profiles_investigation_id_status",
+        "discovered_profiles",
+        ["investigation_id", "verification_status"],
+    )
 
     op.create_table(
         "evidence_sources",
@@ -233,8 +264,12 @@ def upgrade() -> None:
         sa.Column("phone_reference_found", sa.Boolean(), nullable=False),
         _ts("collected_at", nullable=False),
         _ts("expiration_at", nullable=False),
-        sa.ForeignKeyConstraint(["discovered_profile_id"], ["discovered_profiles.id"],
-                                name="fk_evidence_sources_discovered_profile_id_discovered_profiles", ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["discovered_profile_id"],
+            ["discovered_profiles.id"],
+            name="fk_evidence_sources_discovered_profile_id_discovered_profiles",
+            ondelete="CASCADE",
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_evidence_sources"),
     )
     op.create_index("ix_evidence_sources_discovered_profile_id", "evidence_sources", ["discovered_profile_id"])
@@ -281,10 +316,10 @@ def upgrade() -> None:
         )
 
     now = datetime.now(UTC)
-    op.bulk_insert(roles, [
-        {"id": uuid.uuid4(), "name": name, "permissions": perms, "created_at": now}
-        for name, perms in _ROLES.items()
-    ])
+    op.bulk_insert(
+        roles,
+        [{"id": uuid.uuid4(), "name": name, "permissions": perms, "created_at": now} for name, perms in _ROLES.items()],
+    )
 
 
 def downgrade() -> None:
@@ -292,7 +327,16 @@ def downgrade() -> None:
         op.execute("DROP TRIGGER IF EXISTS trg_audit_logs_append_only ON audit_logs;")
         op.execute("DROP FUNCTION IF EXISTS audit_logs_block_update();")
     for table in (
-        "audit_logs", "evidence_sources", "discovered_profiles", "investigation_jobs", "phone_intelligence",
-        "investigations", "telegram_links", "api_keys", "refresh_tokens", "users", "roles",
+        "audit_logs",
+        "evidence_sources",
+        "discovered_profiles",
+        "investigation_jobs",
+        "phone_intelligence",
+        "investigations",
+        "telegram_links",
+        "api_keys",
+        "refresh_tokens",
+        "users",
+        "roles",
     ):
         op.drop_table(table)

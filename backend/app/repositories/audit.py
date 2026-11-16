@@ -17,9 +17,19 @@ class AuditRepository:
     def add(self, entry: AuditLog) -> None:
         self.session.add(entry)
 
-    async def list(self, *, actor_id: uuid.UUID | None, action: str | None, resource_type: str | None,
-                   resource_id: str | None, since: datetime | None, until: datetime | None, sort: str | None,
-                   page: int, page_size: int) -> Page[AuditLog]:
+    async def list(
+        self,
+        *,
+        actor_id: uuid.UUID | None,
+        action: str | None,
+        resource_type: str | None,
+        resource_id: str | None,
+        since: datetime | None,
+        until: datetime | None,
+        sort: str | None,
+        page: int,
+        page_size: int,
+    ) -> Page[AuditLog]:
         stmt = select(AuditLog)
         if actor_id:
             stmt = stmt.where(AuditLog.actor_id == actor_id)

@@ -103,11 +103,15 @@ class VerificationOutcome:
             return "The investigated number is published in this profile's own public content."
         if self.status is VerificationStatus.PUBLIC_CANDIDATE:
             kinds = sorted({e.source_type.value for e in phone_hits})
-            return ("Public sources link this profile URL to the investigated number "
-                    f"({', '.join(kinds)}), but the profile itself was not live-confirmed to publish it.")
+            return (
+                "Public sources link this profile URL to the investigated number "
+                f"({', '.join(kinds)}), but the profile itself was not live-confirmed to publish it."
+            )
         if self.discovery_source is DiscoverySource.GENERATED_OFFICIAL_LINK:
-            return ("Official link format generated from the number. It does not indicate that an account "
-                    "exists or that the number is registered.")
+            return (
+                "Official link format generated from the number. It does not indicate that an account "
+                "exists or that the number is registered."
+            )
         if self.status is VerificationStatus.NOT_FOUND:
             return "The platform reports that this profile does not exist."
         if self.status is VerificationStatus.RESTRICTED:
@@ -150,8 +154,12 @@ class VerificationEngine:
             discovery_source=DiscoverySource.GENERATED_OFFICIAL_LINK,
             status=VerificationStatus.UNVERIFIED,
             confidence=confidence.ConfidenceResult(score=0, level=ConfidenceLevel.NONE, factors=[]),
-            platform=platform.key, platform_name=platform.name, kind=ref.kind, handle=ref.handle,
-            profile_url=ref.canonical_url, canonical_url=ref.canonical_url,
+            platform=platform.key,
+            platform_name=platform.name,
+            kind=ref.kind,
+            handle=ref.handle,
+            profile_url=ref.canonical_url,
+            canonical_url=ref.canonical_url,
             evidence=[evidence],
             stages=[
                 StageResult("platform", "passed", f"{platform.name} {ref.kind}"),
@@ -177,8 +185,11 @@ class VerificationEngine:
             stages.append(StageResult(stage, "failed", detail))
             stages.append(StageResult("final_result", "info", VerificationStatus.ERROR.value))
             return VerificationOutcome(
-                input_url=url[:2048], discovery_source=discovery_source, status=VerificationStatus.ERROR,
-                confidence=confidence.ConfidenceResult(0, ConfidenceLevel.NONE, []), stages=stages,
+                input_url=url[:2048],
+                discovery_source=discovery_source,
+                status=VerificationStatus.ERROR,
+                confidence=confidence.ConfidenceResult(0, ConfidenceLevel.NONE, []),
+                stages=stages,
                 limitations=limitations,
             )
 
@@ -204,11 +215,19 @@ class VerificationEngine:
         limitations.extend(platform.extra_limitations)
 
         outcome = VerificationOutcome(
-            input_url=url[:2048], discovery_source=discovery_source, status=VerificationStatus.UNVERIFIED,
-            confidence=confidence.ConfidenceResult(0, ConfidenceLevel.NONE, []), platform=platform.key,
-            platform_name=platform.name, kind=ref.kind, handle=ref.handle,
-            profile_url=ref.canonical_url, canonical_url=ref.canonical_url, stages=stages,
-            limitations=limitations, evidence=evidence,
+            input_url=url[:2048],
+            discovery_source=discovery_source,
+            status=VerificationStatus.UNVERIFIED,
+            confidence=confidence.ConfidenceResult(0, ConfidenceLevel.NONE, []),
+            platform=platform.key,
+            platform_name=platform.name,
+            kind=ref.kind,
+            handle=ref.handle,
+            profile_url=ref.canonical_url,
+            canonical_url=ref.canonical_url,
+            stages=stages,
+            limitations=limitations,
+            evidence=evidence,
         )
 
         # 4-7. Availability, redirects, canonical URL, metadata ---------------
@@ -222,15 +241,21 @@ class VerificationEngine:
             live_state, via_api = await self._live_check(platform, ref, variants, outcome)
 
         # 8. Evidence collection --------------------------------------------
-        stages.append(StageResult("evidence_collection", "passed" if evidence else "info",
-                                  f"{len(evidence)} evidence item(s), "
-                                  f"{sum(e.phone_reference_found for e in evidence)} with a number reference"))
+        stages.append(
+            StageResult(
+                "evidence_collection",
+                "passed" if evidence else "info",
+                f"{len(evidence)} evidence item(s), "
+                f"{sum(e.phone_reference_found for e in evidence)} with a number reference",
+            )
+        )
 
         # 9. Confidence -----------------------------------------------------
         active = self._factors(evidence, live_state, via_api, discovery_source)
         outcome.confidence = confidence.score(active)
-        stages.append(StageResult("confidence", "info",
-                                  f"{outcome.confidence.level.value} ({outcome.confidence.score}/100)"))
+        stages.append(
+            StageResult("confidence", "info", f"{outcome.confidence.level.value} ({outcome.confidence.score}/100)")
+        )
 
         # 10. Final status --------------------------------------------------
         outcome.status = self._status(evidence, live_state)
@@ -251,20 +276,23 @@ class VerificationEngine:
         if platform.fetch_policy is FetchPolicy.PUBLIC_PAGE:
             return await self._public_page(platform, ref, variants, outcome), False
         if platform.fetch_policy is FetchPolicy.OFFICIAL_API and client is None:
-            stages.append(StageResult("availability", "skipped",
-                                      f"No credentials configured for the official {platform.name} API"))
+            stages.append(
+                StageResult(
+                    "availability", "skipped", f"No credentials configured for the official {platform.name} API"
+                )
+            )
             outcome.limitations.append(f"{platform.name} official API not configured; existence not checked.")
             return "skipped", False
         if client is None:
             stages.append(StageResult("availability", "skipped", "Live checks not permitted for this platform"))
         return "skipped", False
 
-    def _apply_lookup(self, lookup: PlatformLookup, variants: NumberVariants | None,
-                      outcome: VerificationOutcome) -> str:
+    def _apply_lookup(
+        self, lookup: PlatformLookup, variants: NumberVariants | None, outcome: VerificationOutcome
+    ) -> str:
         stages = outcome.stages
         if lookup.error and lookup.exists is None:
-            stages.append(StageResult("availability", "info",
-                                      f"{lookup.source_name}: inconclusive ({lookup.error})"))
+            stages.append(StageResult("availability", "info", f"{lookup.source_name}: inconclusive ({lookup.error})"))
             if lookup.error.startswith("blocked"):
                 return "inaccessible"
             return "unknown"
@@ -285,23 +313,33 @@ class VerificationEngine:
         outcome.display_name = lookup.display_name
         found = variants is not None and any(text_references_number(t, variants) for t in lookup.public_text)
         matched = next((t for t in lookup.public_text if variants and text_references_number(t, variants)), None)
-        outcome.evidence.append(EvidenceItem(
-            source_url=lookup.api_url,
-            source_type=EvidenceSourceType.OFFICIAL_PLATFORM_API,
-            source_name=lookup.source_name,
-            reliability=SourceReliability.HIGH,
-            summary=redact_excerpt(matched, variants) if matched else "Profile exists; public profile fields "
-                    "do not contain the investigated number.",
-            phone_reference_found=found,
-            on_profile=True,
-        ))
-        stages.append(StageResult("public_metadata", "passed",
-                                  "Number referenced in public profile fields" if found
-                                  else "No number reference in public profile fields"))
+        outcome.evidence.append(
+            EvidenceItem(
+                source_url=lookup.api_url,
+                source_type=EvidenceSourceType.OFFICIAL_PLATFORM_API,
+                source_name=lookup.source_name,
+                reliability=SourceReliability.HIGH,
+                summary=redact_excerpt(matched, variants)
+                if matched
+                else "Profile exists; public profile fields do not contain the investigated number.",
+                phone_reference_found=found,
+                on_profile=True,
+            )
+        )
+        stages.append(
+            StageResult(
+                "public_metadata",
+                "passed",
+                "Number referenced in public profile fields"
+                if found
+                else "No number reference in public profile fields",
+            )
+        )
         return "exists"
 
-    async def _public_page(self, platform: Platform, ref: ProfileRef, variants: NumberVariants | None,
-                           outcome: VerificationOutcome) -> str:
+    async def _public_page(
+        self, platform: Platform, ref: ProfileRef, variants: NumberVariants | None, outcome: VerificationOutcome
+    ) -> str:
         stages = outcome.stages
         domains = frozenset(platform.domains)
         if self._respect_robots and not await self._robots.allowed(ref.canonical_url, allowed_domains=domains):
@@ -313,8 +351,11 @@ class VerificationEngine:
         except RedirectBlocked as exc:
             outcome.redirect_chain = [{"url": h.url, "status": h.status_code} for h in exc.chain]
             stages.append(StageResult("availability", "failed", "Redirect refused"))
-            stages.append(StageResult("redirect_inspection", "failed",
-                                      f"Redirect chain left the platform allowlist ({exc.reason})"))
+            stages.append(
+                StageResult(
+                    "redirect_inspection", "failed", f"Redirect chain left the platform allowlist ({exc.reason})"
+                )
+            )
             return "restricted"
         except OutboundBlocked as exc:
             stages.append(StageResult("availability", "failed", f"Outbound policy: {exc.message}"))
@@ -326,10 +367,13 @@ class VerificationEngine:
         outcome.http_status = result.status_code
         outcome.redirect_chain = [{"url": h.url, "status": h.status_code} for h in result.redirect_chain]
         final_path = httpx.URL(result.final_url).path.lower()
-        stages.append(StageResult(
-            "redirect_inspection", "passed" if not result.redirect_chain else "info",
-            f"{len(result.redirect_chain)} redirect(s); final host {httpx.URL(result.final_url).host}",
-        ))
+        stages.append(
+            StageResult(
+                "redirect_inspection",
+                "passed" if not result.redirect_chain else "info",
+                f"{len(result.redirect_chain)} redirect(s); final host {httpx.URL(result.final_url).host}",
+            )
+        )
         if result.status_code in (404, 410):
             stages.append(StageResult("availability", "failed", f"HTTP {result.status_code}"))
             return "not_found"
@@ -345,8 +389,9 @@ class VerificationEngine:
             return "inaccessible"
         meta = parse_metadata(result.text())
         if platform.key == "telegram" and "tgme_page_title" not in meta.classes:
-            stages.append(StageResult("availability", "failed",
-                                      "Public preview shows no public profile for this username"))
+            stages.append(
+                StageResult("availability", "failed", "Public preview shows no public profile for this username")
+            )
             outcome.limitations.append("Telegram preview did not show a public profile (may not exist).")
             return "not_found"
         stages.append(StageResult("availability", "passed", f"HTTP 200 ({result.elapsed_ms} ms)"))
@@ -359,24 +404,32 @@ class VerificationEngine:
         outcome.display_name = (meta.og_title or meta.title or "")[:200] or None
         texts = meta.public_text()
         matched = next((t for t in texts if variants and text_references_number(t, variants)), None)
-        outcome.evidence.append(EvidenceItem(
-            source_url=result.final_url,
-            source_type=EvidenceSourceType.LIVE_PROFILE_PAGE,
-            source_name=f"{platform.key}_public_page",
-            reliability=SourceReliability.HIGH,
-            summary=redact_excerpt(matched, variants) if matched
-            else "Public page reachable; it does not contain the investigated number.",
-            phone_reference_found=matched is not None,
-            on_profile=True,
-        ))
-        stages.append(StageResult("public_metadata", "passed",
-                                  "Number referenced on the public page" if matched
-                                  else "No number reference on the public page"))
+        outcome.evidence.append(
+            EvidenceItem(
+                source_url=result.final_url,
+                source_type=EvidenceSourceType.LIVE_PROFILE_PAGE,
+                source_name=f"{platform.key}_public_page",
+                reliability=SourceReliability.HIGH,
+                summary=redact_excerpt(matched, variants)
+                if matched
+                else "Public page reachable; it does not contain the investigated number.",
+                phone_reference_found=matched is not None,
+                on_profile=True,
+            )
+        )
+        stages.append(
+            StageResult(
+                "public_metadata",
+                "passed",
+                "Number referenced on the public page" if matched else "No number reference on the public page",
+            )
+        )
         return "exists"
 
     @staticmethod
-    def _factors(evidence: list[EvidenceItem], live_state: str, via_api: bool,
-                 discovery_source: DiscoverySource) -> set[str]:
+    def _factors(
+        evidence: list[EvidenceItem], live_state: str, via_api: bool, discovery_source: DiscoverySource
+    ) -> set[str]:
         active: set[str] = set()
         positive = [e for e in evidence if e.phone_reference_found]
         live_types = (EvidenceSourceType.LIVE_PROFILE_PAGE, EvidenceSourceType.OFFICIAL_PLATFORM_API)

@@ -1,10 +1,10 @@
 """Operator commands.
 
-    python -m app.manage generate-keys
-    python -m app.manage create-admin --email admin@example.org
-    python -m app.manage create-service-account --name telegram-bot
-    python -m app.manage purge
-    python -m app.manage dlq [--requeue]
+python -m app.manage generate-keys
+python -m app.manage create-admin --email admin@example.org
+python -m app.manage create-service-account --name telegram-bot
+python -m app.manage purge
+python -m app.manage dlq [--requeue]
 """
 
 from __future__ import annotations
@@ -35,8 +35,9 @@ async def _create_user(email: str, role: str, password: str | None) -> None:
         async with container.sessionmaker() as session:
             auth = AuthService(session, container.settings, container.tokens, container.redis, container.indexer)
             pwd = password or getpass.getpass("Password (min 12 chars): ")
-            user = await auth.register(email, pwd, AuditContext(None, None, "system"), role_name=role,
-                                       status="active", bypass_closed=True)
+            user = await auth.register(
+                email, pwd, AuditContext(None, None, "system"), role_name=role, status="active", bypass_closed=True
+            )
             await session.commit()
             _print(f"Created {role} user {user.email} ({user.id})")
     finally:
@@ -49,11 +50,18 @@ async def _create_service_account(name: str) -> None:
         async with container.sessionmaker() as session:
             auth = AuthService(session, container.settings, container.tokens, container.redis, container.indexer)
             email = f"svc-{name}@service.phoneintel.invalid"
-            user = await auth.register(email, secrets.token_urlsafe(48), AuditContext(None, None, "system"),
-                                       role_name="service_telegram", status="active", bypass_closed=True)
+            user = await auth.register(
+                email,
+                secrets.token_urlsafe(48),
+                AuditContext(None, None, "system"),
+                role_name="service_telegram",
+                status="active",
+                bypass_closed=True,
+            )
             principal = Principal(user=user, permissions=BUILTIN_ROLES["service_telegram"], via="system")
-            _, plaintext = await auth.create_api_key(principal, f"{name} service key", None, 365,
-                                                     AuditContext(user.id, None, "system"))
+            _, plaintext = await auth.create_api_key(
+                principal, f"{name} service key", None, 365, AuditContext(user.id, None, "system")
+            )
             await session.commit()
             _print(f"Service account {email} created.")
             _print("API key (shown once; store it in the bot's secret store as BOT_SERVICE_API_KEY):")

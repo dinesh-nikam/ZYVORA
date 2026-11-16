@@ -14,9 +14,9 @@ from app.models.enums import ConfidenceLevel
 
 # Points per factor (documented in docs/methodology.md).
 FACTOR_POINTS: dict[str, int] = {
-    "phone_on_profile_live": 65,       # live profile page / official API shows the number
-    "phone_on_profile_index": 35,      # search-index snippet of the profile page itself shows the number
-    "phone_on_third_party_page": 20,   # number and profile link co-occur on another public page
+    "phone_on_profile_live": 65,  # live profile page / official API shows the number
+    "phone_on_profile_index": 35,  # search-index snippet of the profile page itself shows the number
+    "phone_on_third_party_page": 20,  # number and profile link co-occur on another public page
     "multiple_independent_sources": 10,
     "profile_exists_confirmed": 10,
     "official_api_confirmation": 5,
@@ -66,14 +66,17 @@ def score(active: set[str]) -> ConfidenceResult:
     unknown = active - FACTOR_POINTS.keys()
     if unknown:
         raise ValueError(f"unknown confidence factors: {sorted(unknown)}")
-    has_phone_reference = bool(active & {"phone_on_profile_live", "phone_on_profile_index",
-                                         "phone_on_third_party_page"})
+    has_phone_reference = bool(
+        active & {"phone_on_profile_live", "phone_on_profile_index", "phone_on_third_party_page"}
+    )
     if not has_phone_reference and total > CAP_WITHOUT_PHONE_REFERENCE:
-        factors.append({
-            "factor": "cap_no_phone_reference",
-            "points": CAP_WITHOUT_PHONE_REFERENCE - total,
-            "description": "Capped: no public evidence links this profile to the investigated number",
-        })
+        factors.append(
+            {
+                "factor": "cap_no_phone_reference",
+                "points": CAP_WITHOUT_PHONE_REFERENCE - total,
+                "description": "Capped: no public evidence links this profile to the investigated number",
+            }
+        )
         total = CAP_WITHOUT_PHONE_REFERENCE
     total = max(0, min(100, total))
     return ConfidenceResult(score=total, level=level_for(total), factors=factors)

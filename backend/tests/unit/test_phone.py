@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from app.core.errors import ValidationFailed
 from app.models.enums import ValidationStatus
 from app.services.phone.matching import build_variants, text_references_number
@@ -10,14 +9,17 @@ from app.services.phone.service import PhoneIntelService
 svc = PhoneIntelService()
 
 
-@pytest.mark.parametrize(("raw", "region", "e164", "cc", "iso"), [
-    ("+919876543210", None, "+919876543210", 91, "IN"),
-    ("+91 98765-43210", None, "+919876543210", 91, "IN"),
-    ("098765 43210", "IN", "+919876543210", 91, "IN"),
-    ("+1 (650) 253-0000", None, "+16502530000", 1, "US"),
-    ("+44 20 7946 0958", None, "+442079460958", 44, "GB"),
-    ("+49 30 901820", None, "+4930901820", 49, "DE"),
-])
+@pytest.mark.parametrize(
+    ("raw", "region", "e164", "cc", "iso"),
+    [
+        ("+919876543210", None, "+919876543210", 91, "IN"),
+        ("+91 98765-43210", None, "+919876543210", 91, "IN"),
+        ("098765 43210", "IN", "+919876543210", 91, "IN"),
+        ("+1 (650) 253-0000", None, "+16502530000", 1, "US"),
+        ("+44 20 7946 0958", None, "+442079460958", 44, "GB"),
+        ("+49 30 901820", None, "+4930901820", 49, "DE"),
+    ],
+)
 def test_normalizes_to_e164_and_detects_country(raw: str, region: str | None, e164: str, cc: int, iso: str) -> None:
     intel = svc.analyze(raw, region)
     assert intel.e164 == e164
@@ -73,24 +75,30 @@ def test_require_investigable_rejects_invalid() -> None:
 class TestNumberMatching:
     variants = build_variants("+919876543210")
 
-    @pytest.mark.parametrize("text", [
-        "Call +91 98765 43210 today",
-        "WhatsApp: +919876543210",
-        "phone 098765-43210",
-        "wa.me/919876543210",
-        "tel:0091 98765 43210",
-        "(+91) 98765.43210",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Call +91 98765 43210 today",
+            "WhatsApp: +919876543210",
+            "phone 098765-43210",
+            "wa.me/919876543210",
+            "tel:0091 98765 43210",
+            "(+91) 98765.43210",
+        ],
+    )
     def test_detects_formats(self, text: str) -> None:
         assert text_references_number(text, self.variants)
 
-    @pytest.mark.parametrize("text", [
-        "Call +91 98765 43211 today",          # different number
-        "Order 19876543210999 shipped",         # digits embedded in a longer run
-        "John Doe 9876 profile",                 # partial overlap
-        "",
-        "+44 20 7946 0958",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Call +91 98765 43211 today",  # different number
+            "Order 19876543210999 shipped",  # digits embedded in a longer run
+            "John Doe 9876 profile",  # partial overlap
+            "",
+            "+44 20 7946 0958",
+        ],
+    )
     def test_no_false_positives(self, text: str) -> None:
         assert not text_references_number(text, self.variants)
 

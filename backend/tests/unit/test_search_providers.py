@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-
 from app.integrations.http import SafeHttpClient
 from app.integrations.search.providers import (
     BraveSearchProvider,
@@ -13,6 +12,7 @@ from app.integrations.search.providers import (
 )
 from app.services.discovery.service import DiscoveryService, normalize_result_url
 from app.services.phone.matching import build_variants
+
 from tests.conftest import MockWeb, default_web, make_settings
 
 
@@ -34,8 +34,12 @@ async def test_brave_parsing_and_auth_header(tmp_path) -> None:
 
 async def test_google_cse_parsing(tmp_path) -> None:
     web = MockWeb()
-    web.add("https://www.googleapis.com/customsearch/v1", httpx.Response(200, json={"items": [
-        {"link": "https://t.me/acmehelp", "title": "ACME", "snippet": "Call +91 98765 43210"}]}))
+    web.add(
+        "https://www.googleapis.com/customsearch/v1",
+        httpx.Response(
+            200, json={"items": [{"link": "https://t.me/acmehelp", "title": "ACME", "snippet": "Call +91 98765 43210"}]}
+        ),
+    )
     http = client(tmp_path, web)
     hits = await GoogleCseProvider(http, "key", "cx1").search("q", count=5)
     assert hits[0].url == "https://t.me/acmehelp"
@@ -45,8 +49,12 @@ async def test_google_cse_parsing(tmp_path) -> None:
 
 async def test_searxng_trusted_endpoint(tmp_path) -> None:
     web = MockWeb()
-    web.add("http://search.example.net:8080/search", httpx.Response(200, json={"results": [
-        {"url": "https://github.com/acmedev", "title": "acmedev", "content": "hotline"}]}))
+    web.add(
+        "http://search.example.net:8080/search",
+        httpx.Response(
+            200, json={"results": [{"url": "https://github.com/acmedev", "title": "acmedev", "content": "hotline"}]}
+        ),
+    )
     http = client(tmp_path, web)
     hits = await SearxngProvider(http, "http://search.example.net:8080").search("q", count=5)
     assert hits[0].url == "https://github.com/acmedev"
@@ -76,8 +84,14 @@ async def test_invalid_json_is_reported(tmp_path) -> None:
 
 def test_only_credentialed_providers_are_built(tmp_path) -> None:
     web = MockWeb()
-    settings = make_settings(tmp_path, brave_api_key=None, search_providers="brave,google_cse,searxng",
-                             google_cse_api_key="g", google_cse_cx=None, searxng_base_url=None)
+    settings = make_settings(
+        tmp_path,
+        brave_api_key=None,
+        search_providers="brave,google_cse,searxng",
+        google_cse_api_key="g",
+        google_cse_cx=None,
+        searxng_base_url=None,
+    )
     assert build_search_providers(settings, client(tmp_path, web)) == []
 
 
@@ -87,10 +101,10 @@ async def test_discovery_dedupes_and_extracts(tmp_path) -> None:
     service = DiscoveryService([BraveSearchProvider(http, "k")], max_queries=3)
     run = await service.search(build_variants("+919876543210"), ["telegram", "instagram", "facebook", "github"])
     urls = set(run.candidates)
-    assert "https://www.instagram.com/acme_support/" in urls        # profile URL returned by the index
-    assert "https://t.me/acmehelp" in urls                           # extracted from a third-party snippet
+    assert "https://www.instagram.com/acme_support/" in urls  # profile URL returned by the index
+    assert "https://t.me/acmehelp" in urls  # extracted from a third-party snippet
     assert "https://github.com/acmedev" in urls
-    assert "https://www.facebook.com/john.doe.123" in urls           # returned, but carries no number evidence
+    assert "https://www.facebook.com/john.doe.123" in urls  # returned, but carries no number evidence
     fb = run.candidates["https://www.facebook.com/john.doe.123"]
     assert not any(e.phone_reference_found for e in fb.evidence)
     tg = run.candidates["https://t.me/acmehelp"]

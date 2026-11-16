@@ -1,216 +1,185 @@
-"""Async backend API client for Telegram Bot with delegation support."""
+"""Async PHONEINTEL API client used by the bot.
+
+The bot authenticates with its *service* API key and acts on behalf of the
+Telegram user by sending ``X-Telegram-User-Id``.  The backend resolves that id
+to the linked PHONEINTEL account and applies that account's permissions and
+data isolation; the bot never sees other users' records.
+"""
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import httpx
 
 from phoneintel_bot.config import BotSettings
 
+_UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+_REFERENCE = re.compile(r"^PI-\d{8}-[A-Z0-9]{6}$", re.IGNORECASE)
+
 
 class BotAPIError(Exception):
-    def __init__(self, message: str, code: str | None = None, status_code: int | None = None) -> None:
+    def __init__(
+        self, message: str, *, code: str | None = None, status_code: int | None = None, details: Any = None
+    ) -> None:
         super().__init__(message)
+        self.message = message
         self.code = code
         self.status_code = status_code
+        self.details = details
 
 
 class BackendClient:
-    def __init__(self, settings: BotSettings, client: httpx.AsyncClient | None = None) -> None:
+    def __init__(self, settings: BotSettings, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self.settings = settings
-        self.base_url = settings.api_url.rstrip("/")
-        self._external_client = client
+        self._http = httpx.AsyncClient(
+            base_url=settings.api_url,
+            timeout=settings.request_timeout_seconds,
+            transport=transport,
+            headers={
+                "User-Agent": "phoneintel-telegram-bot/1.0",
+                "Accept": "application/json",
+                "X-API-Key": settings.service_api_key.get_secret_value(),
+            },
+        )
 
-    def _headers(self, telegram_user_id: int | None = None) -> dict[str, str]:
-        headers = {
-            "User-Agent": "phoneintel-bot/1.0.0",
-            "Accept": "application/json",
-            "X-API-Key": self.settings.service_api_key.get_secret_value(),
-        }
-        if telegram_user_id is not None:
-            headers["X-Telegram-User-Id"] = str(telegram_user_id)
-        return headers
+    async def aclose(self) -> None:
+        await self._http.aclose()
 
     async def _request(
-        self,
-        method: str,
-        path: str,
-        *,
-        telegram_user_id: int | None = None,
-        json: Any = None,
-        params: dict[str, Any] | None = None,
+        self, method: str, path: str, *, telegram_user_id: int | None = None, **kwargs: Any
     ) -> httpx.Response:
-        url = f"{self.base_url}{path}"
-        headers = self._headers(telegram_user_id)
-
+        headers = dict(kwargs.pop("headers", {}))
+        if telegram_user_id is not None:
+            headers["X-Telegram-User-Id"] = str(int(telegram_user_id))
         try:
-            if self._external_client is not None:
-                resp = await self._external_client.request(
-                    method,
-                    url,
-                    json=json,
-                    params=params,
-                    headers=headers,
-                    timeout=self.settings.request_timeout_seconds,
-                )
-            else:
-                async with httpx.AsyncClient(timeout=self.settings.request_timeout_seconds) as ac:
-                    resp = await ac.request(method, url, json=json, params=params, headers=headers)
-        except httpx.ConnectError as exc:
-            raise BotAPIError(f"Backend service unavailable: {exc}", code="backend_unavailable") from exc
+            response = await self._http.request(method, path, headers=headers, **kwargs)
         except httpx.TimeoutException as exc:
-            raise BotAPIError("Request to backend timed out", code="timeout") from exc
-        except httpx.RequestError as exc:
-            raise BotAPIError(f"Communication error: {exc}", code="network_error") from exc
-
-        if resp.is_error:
-            code = "error"
-            msg = f"HTTP {resp.status_code}"
+            raise BotAPIError("The PHONEINTEL service timed out", code="timeout") from exc
+        except httpx.HTTPError as exc:
+            raise BotAPIError("The PHONEINTEL service is unreachable", code="backend_unavailable") from exc
+        if response.is_error:
+            code, message, details = "error", f"HTTP {response.status_code}", None
             try:
-                data = resp.json()
-                if "error" in data:
-                    code = data["error"].get("code", code)
-                    msg = data["error"].get("message", msg)
-                elif "detail" in data:
-                    msg = str(data["detail"])
-            except Exception:
-                msg = resp.text or msg
-            raise BotAPIError(msg, code=code, status_code=resp.status_code)
+                err = response.json().get("error") or {}
+                code = err.get("code") or code
+                message = err.get("message") or message
+                details = err.get("details")
+            except (ValueError, AttributeError):
+                message = response.reason_phrase or message
+            raise BotAPIError(message, code=code, status_code=response.status_code, details=details)
+        return response
 
-        return resp
+    async def _json(self, method: str, path: str, **kwargs: Any) -> Any:
+        response = await self._request(method, path, **kwargs)
+        return response.json() if response.content else None
 
-    # ---------------- Linking ----------------
+    # ---------------------------------------------------------- linking
     async def link_account(self, telegram_user_id: int, code: str) -> dict[str, Any]:
-        """Service account links Telegram user ID with one-time code."""
-        resp = await self._request(
+        return await self._json(
             "POST",
             "/api/v1/integrations/telegram/link",
             json={"telegram_user_id": telegram_user_id, "code": code.strip().upper()},
         )
-        return resp.json()
 
     async def unlink_account(self, telegram_user_id: int) -> dict[str, Any]:
-        resp = await self._request(
-            "POST",
-            "/api/v1/integrations/telegram/unlink",
-            json={"telegram_user_id": telegram_user_id},
+        return await self._json(
+            "POST", "/api/v1/integrations/telegram/unlink", json={"telegram_user_id": telegram_user_id}
         )
-        return resp.json()
 
-    # ---------------- Phone Endpoints ----------------
-    async def validate_phone(self, telegram_user_id: int, phone: str, region: str | None = None) -> dict[str, Any]:
-        resp = await self._request(
-            "POST",
-            "/api/v1/phone/validate",
-            telegram_user_id=telegram_user_id,
-            json={"phone": phone, "region": region},
+    # ------------------------------------------------------------ phone
+    async def validate_phone(self, uid: int, phone: str, region: str | None = None) -> dict[str, Any]:
+        return await self._json(
+            "POST", "/api/v1/phone/validate", telegram_user_id=uid, json={"phone": phone, "region": region}
         )
-        return resp.json()
 
-    async def phone_metadata(self, telegram_user_id: int, phone: str, region: str | None = None) -> dict[str, Any]:
-        resp = await self._request(
-            "POST",
-            "/api/v1/phone/metadata",
-            telegram_user_id=telegram_user_id,
-            json={"phone": phone, "region": region},
+    async def phone_metadata(self, uid: int, phone: str, region: str | None = None) -> dict[str, Any]:
+        return await self._json(
+            "POST", "/api/v1/phone/metadata", telegram_user_id=uid, json={"phone": phone, "region": region}
         )
-        return resp.json()
 
-    # ---------------- Investigations & Profiles ----------------
-    async def create_investigation(
-        self,
-        telegram_user_id: int,
-        phone: str,
-        purpose: str = "Telegram bot investigation",
-        basis: str = "fraud_prevention",
-        region: str | None = None,
-    ) -> dict[str, Any]:
-        body = {
-            "phone": phone,
-            "region": region,
-            "purpose": purpose,
-            "authorization_basis": basis,
-            "acknowledge_limitations": True,
-        }
-        resp = await self._request(
+    # --------------------------------------------------- investigations
+    async def create_investigation(self, uid: int, *, phone: str, purpose: str, basis: str) -> dict[str, Any]:
+        return await self._json(
             "POST",
             "/api/v1/investigations",
-            telegram_user_id=telegram_user_id,
-            json=body,
+            telegram_user_id=uid,
+            json={
+                "phone": phone,
+                "purpose": purpose,
+                "authorization_basis": basis,
+                "authorization_reference": "telegram-bot",
+                "acknowledge_limitations": True,
+            },
         )
-        return resp.json()
 
     async def start_discovery(
-        self,
-        telegram_user_id: int,
-        investigation_id: str,
-        profile_urls: list[str] | None = None,
+        self, uid: int, investigation_id: str, *, live_checks: bool, idempotency_key: str
     ) -> dict[str, Any]:
-        body: dict[str, Any] = {
-            "include_web_search": True,
-            "live_checks": True,
-        }
-        if profile_urls:
-            body["profile_urls"] = profile_urls
-        resp = await self._request(
+        return await self._json(
             "POST",
             f"/api/v1/investigations/{investigation_id}/profile-discovery",
-            telegram_user_id=telegram_user_id,
-            json=body,
+            telegram_user_id=uid,
+            json={"include_web_search": True, "live_checks": live_checks},
+            headers={"Idempotency-Key": idempotency_key},
         )
-        return resp.json()
 
-    async def get_investigation(self, telegram_user_id: int, investigation_id: str) -> dict[str, Any]:
-        resp = await self._request(
-            "GET",
-            f"/api/v1/investigations/{investigation_id}",
-            telegram_user_id=telegram_user_id,
-        )
-        return resp.json()
+    async def get_investigation(self, uid: int, investigation_id: str) -> dict[str, Any]:
+        return await self._json("GET", f"/api/v1/investigations/{investigation_id}", telegram_user_id=uid)
 
-    async def list_profiles(self, telegram_user_id: int, investigation_id: str) -> dict[str, Any]:
-        resp = await self._request(
+    async def cancel_investigation(self, uid: int, investigation_id: str) -> dict[str, Any]:
+        return await self._json("POST", f"/api/v1/investigations/{investigation_id}/cancel", telegram_user_id=uid)
+
+    async def list_profiles(self, uid: int, investigation_id: str) -> dict[str, Any]:
+        return await self._json(
             "GET",
             f"/api/v1/investigations/{investigation_id}/profiles",
-            telegram_user_id=telegram_user_id,
-        )
-        return resp.json()
-
-    async def list_investigations(self, telegram_user_id: int, page: int = 1, page_size: int = 10) -> dict[str, Any]:
-        resp = await self._request(
-            "GET",
-            "/api/v1/investigations",
-            telegram_user_id=telegram_user_id,
-            params={"page": page, "page_size": page_size},
-        )
-        return resp.json()
-
-    async def delete_investigation(self, telegram_user_id: int, investigation_id: str) -> None:
-        await self._request(
-            "DELETE",
-            f"/api/v1/investigations/{investigation_id}",
-            telegram_user_id=telegram_user_id,
+            telegram_user_id=uid,
+            params={"page_size": 200},
         )
 
-    async def get_report(
-        self, telegram_user_id: int, investigation_id: str, mask_phone: bool = False
+    async def list_investigations(
+        self,
+        uid: int,
+        *,
+        page_size: int = 10,
+        reference: str | None = None,
     ) -> dict[str, Any]:
-        resp = await self._request(
-            "GET",
-            f"/api/v1/investigations/{investigation_id}/report",
-            telegram_user_id=telegram_user_id,
-            params={"mask_phone": mask_phone},
-        )
-        return resp.json()
+        params: dict[str, Any] = {"page": 1, "page_size": page_size}
+        if reference:
+            params["reference"] = reference
+        return await self._json("GET", "/api/v1/investigations", telegram_user_id=uid, params=params)
 
-    async def export_report(
-        self, telegram_user_id: int, investigation_id: str, fmt: str = "pdf", mask_phone: bool = False
-    ) -> bytes:
-        resp = await self._request(
+    async def resolve_investigation(self, uid: int, token: str | None) -> str | None:
+        """Accept a UUID, a PI-... reference, or nothing (= most recent)."""
+        if token and _UUID.match(token):
+            return token
+        if token and not _REFERENCE.match(token):
+            raise BotAPIError(
+                "Give an investigation id or a reference like PI-20261114-ABC123", code="invalid_reference"
+            )
+        data = await self.list_investigations(uid, page_size=1, reference=token.upper() if token else None)
+        items = data.get("items") or []
+        return str(items[0]["id"]) if items else None
+
+    async def delete_investigation(self, uid: int, investigation_id: str) -> None:
+        await self._request("DELETE", f"/api/v1/investigations/{investigation_id}", telegram_user_id=uid)
+
+    async def erase_all(self, uid: int) -> dict[str, Any]:
+        return await self._json("DELETE", "/api/v1/me/data", telegram_user_id=uid, params={"include_account": False})
+
+    # ---------------------------------------------------------- reports
+    async def get_report(self, uid: int, investigation_id: str) -> dict[str, Any]:
+        return await self._json("GET", f"/api/v1/investigations/{investigation_id}/report", telegram_user_id=uid)
+
+    async def export_report(self, uid: int, investigation_id: str, fmt: str) -> tuple[bytes, str]:
+        response = await self._request(
             "GET",
             f"/api/v1/investigations/{investigation_id}/report/export",
-            telegram_user_id=telegram_user_id,
-            params={"format": fmt, "mask_phone": mask_phone},
+            telegram_user_id=uid,
+            params={"format": fmt},
         )
-        return resp.content
+        disposition = response.headers.get("content-disposition", "")
+        name = disposition.split("filename=")[-1].strip('"') if "filename=" in disposition else f"report.{fmt}"
+        return response.content, name

@@ -57,8 +57,10 @@ def text_references_number(text: str | None, variants: NumberVariants) -> bool:
     # 1) libphonenumber's matcher (handles national/international formats).
     try:
         for match in PhoneNumberMatcher(sample, variants.region or "ZZ", leniency=phonenumbers.Leniency.POSSIBLE):
-            if match.number.country_code == variants.country_code and \
-                    phonenumbers.national_significant_number(match.number) == variants.nsn:
+            if (
+                match.number.country_code == variants.country_code
+                and phonenumbers.national_significant_number(match.number) == variants.nsn
+            ):
                 return True
     except Exception:
         logger.debug("PhoneNumberMatcher failed; using digit-run fallback", exc_info=True)

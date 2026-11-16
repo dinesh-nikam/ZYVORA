@@ -14,8 +14,11 @@ router = APIRouter(prefix="/me", tags=["privacy (data subject requests)"], respo
 
 
 @router.get("/export")
-async def export_my_data(request: Request, principal: Principal = Depends(require(Permission.SELF_DATA_MANAGE)),
-                         service: InvestigationService = Depends(get_investigation_service)) -> dict[str, Any]:
+async def export_my_data(
+    request: Request,
+    principal: Principal = Depends(require(Permission.SELF_DATA_MANAGE)),
+    service: InvestigationService = Depends(get_investigation_service),
+) -> dict[str, Any]:
     """Machine-readable export of the caller's account and investigation data."""
     return await service.export_user_data(principal, audit_context(request, principal))
 
@@ -28,6 +31,5 @@ async def delete_my_data(
     service: InvestigationService = Depends(get_investigation_service),
 ) -> dict[str, Any]:
     """Erase all of the caller's investigations (and optionally the account)."""
-    count = await service.erase_user_data(principal, audit_context(request, principal),
-                                          include_account=include_account)
+    count = await service.erase_user_data(principal, audit_context(request, principal), include_account=include_account)
     return {"investigations_erased": count, "account_closed": include_account}

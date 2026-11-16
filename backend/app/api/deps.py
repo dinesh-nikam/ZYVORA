@@ -43,13 +43,15 @@ def client_ip(request: Request) -> str | None:
         return None
 
 
-def get_auth_service(session: AsyncSession = Depends(get_session),
-                     container: Container = Depends(get_container)) -> AuthService:
+def get_auth_service(
+    session: AsyncSession = Depends(get_session), container: Container = Depends(get_container)
+) -> AuthService:
     return AuthService(session, container.settings, container.tokens, container.redis, container.indexer)
 
 
-def get_investigation_service(session: AsyncSession = Depends(get_session),
-                              container: Container = Depends(get_container)) -> InvestigationService:
+def get_investigation_service(
+    session: AsyncSession = Depends(get_session), container: Container = Depends(get_container)
+) -> InvestigationService:
     return InvestigationService(session, container)
 
 
@@ -58,8 +60,11 @@ async def _resolve_principal(request: Request, auth: AuthService) -> Principal:
     api_key = request.headers.get("x-api-key", "")
     if authorization.lower().startswith("bearer "):
         credential = authorization[7:].strip()
-        principal = (await auth.authenticate_api_key(credential) if looks_like_api_key(credential)
-                     else await auth.authenticate_bearer(credential))
+        principal = (
+            await auth.authenticate_api_key(credential)
+            if looks_like_api_key(credential)
+            else await auth.authenticate_bearer(credential)
+        )
     elif api_key:
         principal = await auth.authenticate_api_key(api_key.strip())
     else:
@@ -67,16 +72,18 @@ async def _resolve_principal(request: Request, auth: AuthService) -> Principal:
     tg_header = request.headers.get("x-telegram-user-id")
     if tg_header is not None:
         if not principal.has(Permission.TELEGRAM_ACT_AS):
-            raise AuthenticationFailed("X-Telegram-User-Id is only accepted from the Telegram service account",
-                                       code="invalid_delegation")
+            raise AuthenticationFailed(
+                "X-Telegram-User-Id is only accepted from the Telegram service account", code="invalid_delegation"
+            )
         if not tg_header.isdigit() or len(tg_header) > 19:
             raise ValidationFailed("Invalid X-Telegram-User-Id header", code="invalid_telegram_user")
         principal = await auth.act_as_telegram_user(principal, int(tg_header))
     return principal
 
 
-async def get_principal(request: Request, auth: AuthService = Depends(get_auth_service),
-                        container: Container = Depends(get_container)) -> Principal:
+async def get_principal(
+    request: Request, auth: AuthService = Depends(get_auth_service), container: Container = Depends(get_container)
+) -> Principal:
     principal = await _resolve_principal(request, auth)
     rule = RateLimitRule.parse(container.settings.rate_limit_default)
     await container.rate_limiter.enforce("principal", str(principal.id), rule)
@@ -87,8 +94,7 @@ async def get_principal(request: Request, auth: AuthService = Depends(get_auth_s
 async def get_user_principal(principal: Principal = Depends(get_principal)) -> Principal:
     """A principal acting for a human user (service accounts must delegate)."""
     if principal.has(Permission.TELEGRAM_ACT_AS):
-        raise AuthenticationFailed("Service accounts must act on behalf of a linked user",
-                                   code="delegation_required")
+        raise AuthenticationFailed("Service accounts must act on behalf of a linked user", code="delegation_required")
     return principal
 
 
@@ -108,8 +114,9 @@ def audit_context(request: Request, principal: Principal | None = None) -> Audit
 def rate_limit(scope: str, setting: str) -> Callable[..., Awaitable[None]]:
     """Per-user limit for an operation class (e.g. discovery runs per hour)."""
 
-    async def dependency(principal: Principal = Depends(get_principal),
-                         container: Container = Depends(get_container)) -> None:
+    async def dependency(
+        principal: Principal = Depends(get_principal), container: Container = Depends(get_container)
+    ) -> None:
         rule = RateLimitRule.parse(getattr(container.settings, setting))
         await container.rate_limiter.enforce(scope, str(principal.id), rule)
 

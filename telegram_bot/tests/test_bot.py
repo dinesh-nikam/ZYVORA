@@ -1,260 +1,297 @@
-"""Tests for PHONEINTEL Telegram Bot handlers and client."""
+"""Telegram bot tests: real aiogram Dispatcher + handlers + middlewares, real
+PHONEINTEL backend (uvicorn thread), and a recording Telegram session in place
+of api.telegram.org."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+import itertools
+import time
+from collections.abc import AsyncGenerator, Iterator
+from typing import Any
 
+import httpx
 import pytest
-from aiogram.types import Chat, Message, User
-from phoneintel_bot.client import BackendClient, BotAPIError
+from aiogram import Bot
+from aiogram.client.session.base import BaseSession
+from aiogram.methods import DeleteMessage, EditMessageText, SendDocument, SendMessage, TelegramMethod
+from aiogram.types import Chat, Message, Update, User
+from phoneintel_bot.client import BackendClient
 from phoneintel_bot.config import BotSettings
-from phoneintel_bot.handlers import (
-    carrier_handler,
-    country_handler,
-    delete_data_handler,
-    help_handler,
-    history_handler,
-    link_handler,
-    privacy_handler,
-    profile_links_handler,
-    report_handler,
-    split_message,
-    start_handler,
-    unlink_handler,
-    validate_handler,
-)
+from phoneintel_bot.main import build_dispatcher
+from phoneintel_bot.middlewares import MemoryRateLimiter
+from phoneintel_bot.texts import split_message
+from tests.live_server import LiveBackend
+
+PASSWORD = "Correct-Horse-Battery-9"
 
 
-def make_message(text: str, user_id: int = 123456789) -> Message:
-    msg = MagicMock(spec=Message)
-    msg.text = text
-    msg.from_user = MagicMock(spec=User)
-    msg.from_user.id = user_id
-    msg.chat = MagicMock(spec=Chat)
-    msg.chat.id = user_id
-    msg.reply = AsyncMock()
-    msg.reply_document = AsyncMock()
-    return msg
+class RecordingSession(BaseSession):
+    """Stands in for api.telegram.org: records every outgoing Bot API call."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[TelegramMethod[Any]] = []
+        self._ids = itertools.count(5000)
+
+    async def close(self) -> None:
+        return None
+
+    async def make_request(self, bot: Bot, method: TelegramMethod[Any], timeout: int | None = None) -> Any:
+        self.calls.append(method)
+        if isinstance(method, (SendMessage, SendDocument)):
+            return Message(
+                message_id=next(self._ids),
+                date=int(time.time()),
+                chat=Chat(id=int(method.chat_id), type="private"),
+                from_user=User(id=1, is_bot=True, first_name="PhoneIntel"),
+                text=getattr(method, "text", None),
+                reply_markup=method.reply_markup,
+            ).as_(bot)
+        return True
+
+    async def stream_content(
+        self,
+        url: str,
+        headers: dict[str, Any] | None = None,
+        timeout: int = 30,
+        chunk_size: int = 65536,
+        raise_for_status: bool = True,
+    ) -> AsyncGenerator[bytes, None]:
+        yield b""
+
+    # helpers -----------------------------------------------------------
+    def texts(self) -> list[str]:
+        return [c.text for c in self.calls if isinstance(c, (SendMessage, EditMessageText)) and c.text]
+
+    def last_text(self) -> str:
+        return self.texts()[-1]
+
+    def button(self, label: str) -> str:
+        for call in reversed(self.calls):
+            markup = getattr(call, "reply_markup", None)
+            for row in getattr(markup, "inline_keyboard", None) or []:
+                for button in row:
+                    if label.lower() in button.text.lower():
+                        return str(button.callback_data)
+        raise AssertionError(f"no button containing {label!r}")
+
+    def documents(self) -> list[SendDocument]:
+        return [c for c in self.calls if isinstance(c, SendDocument)]
 
 
-def make_backend() -> BackendClient:
-    settings = BotSettings(
-        bot_token="123456:FAKE_TOKEN_FOR_TESTING",
-        api_url="http://fake-api",
-        service_api_key="fake-service-key",
-    )
-    return BackendClient(settings)
+class Harness:
+    def __init__(self, backend: LiveBackend, service_key: str, **overrides: Any) -> None:
+        settings = BotSettings(
+            bot_token="123456:TEST-TOKEN",
+            service_api_key=service_key,
+            api_url=backend.base_url,
+            poll_interval_seconds=0.05,
+            discovery_timeout_seconds=60,
+            _env_file=None,
+            **overrides,
+        )
+        self.session = RecordingSession()
+        self.bot = Bot("123456:TEST-TOKEN", session=self.session)
+        self.backend_client = BackendClient(settings)
+        self.dp, self.tracker = build_dispatcher(
+            settings, self.backend_client, limiter=MemoryRateLimiter(settings.rate_limit_per_minute)
+        )
+        self._update_ids = itertools.count(1)
+        self._message_ids = itertools.count(1)
 
-
-def test_split_message() -> None:
-    short_text = "Hello world"
-    assert split_message(short_text, max_len=20) == ["Hello world"]
-
-    long_text = "Line 1\nLine 2\nLine 3\nLine 4"
-    chunks = split_message(long_text, max_len=14)
-    assert len(chunks) >= 2
-    assert "Line 1" in chunks[0]
-
-
-@pytest.mark.asyncio
-async def test_start_command() -> None:
-    msg = make_message("/start")
-    backend = make_backend()
-    await start_handler(msg, backend)
-    msg.reply.assert_called_once()
-    assert "Welcome to *PHONEINTEL Bot*" in msg.reply.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_help_command() -> None:
-    msg = make_message("/help")
-    await help_handler(msg)
-    msg.reply.assert_called_once()
-    assert "PHONEINTEL Bot Commands:" in msg.reply.call_args[0][0]
-    assert "/validate" in msg.reply.call_args[0][0]
-    assert "/profile-links" in msg.reply.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_privacy_command() -> None:
-    msg = make_message("/privacy")
-    await privacy_handler(msg)
-    msg.reply.assert_called_once()
-    assert "Privacy & Transparency Notice" in msg.reply.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_link_command() -> None:
-    msg = make_message("/link TG-123456", user_id=999888777)
-    backend = make_backend()
-    backend.link_account = AsyncMock(return_value={"email": "analyst@example.org"})
-
-    await link_handler(msg, backend)
-    backend.link_account.assert_called_once_with(999888777, "TG-123456")
-    msg.reply.assert_called_once()
-    assert "Successfully linked" in msg.reply.call_args[0][0]
-    assert "analyst@example.org" in msg.reply.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_link_command_missing_code() -> None:
-    msg = make_message("/link")
-    backend = make_backend()
-    await link_handler(msg, backend)
-    assert "Usage: `/link <CODE>`" in msg.reply.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_unlink_command() -> None:
-    msg = make_message("/unlink", user_id=999888777)
-    backend = make_backend()
-    backend.unlink_account = AsyncMock(return_value={"message": "unlinked"})
-
-    await unlink_handler(msg, backend)
-    backend.unlink_account.assert_called_once_with(999888777)
-    assert "unlinked successfully" in msg.reply.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_validate_command_success() -> None:
-    msg = make_message("/validate +919876543210", user_id=123)
-    backend = make_backend()
-    backend.validate_phone = AsyncMock(return_value={
-        "e164": "+919876543210",
-        "international": "+91 98765 43210",
-        "national": "098765 43210",
-        "country_name": "India",
-        "country_code": 91,
-        "region_code": "IN",
-        "number_type": "MOBILE",
-        "validation_status": "VALID",
-        "is_valid": True,
-        "limitations": ["Not proof of identity"],
-    })
-
-    await validate_handler(msg, backend)
-    backend.validate_phone.assert_called_once_with(123, "+919876543210", None)
-    msg.reply.assert_called_once()
-    reply = msg.reply.call_args[0][0]
-    assert "+919876543210" in reply
-    assert "India (+91)" in reply
-
-
-@pytest.mark.asyncio
-async def test_validate_command_unlinked_user() -> None:
-    msg = make_message("/validate +919876543210", user_id=456)
-    backend = make_backend()
-    backend.validate_phone = AsyncMock(side_effect=BotAPIError("Not linked", code="telegram_not_linked"))
-
-    await validate_handler(msg, backend)
-    assert "link your Telegram account first" in msg.reply.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_country_command() -> None:
-    msg = make_message("/country +12025550123", user_id=123)
-    backend = make_backend()
-    backend.validate_phone = AsyncMock(return_value={
-        "e164": "+12025550123",
-        "country_name": "United States",
-        "country_code": 1,
-        "region_code": "US",
-        "number_type": "FIXED_LINE_OR_MOBILE",
-    })
-
-    await country_handler(msg, backend)
-    assert "United States (+1)" in msg.reply.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_carrier_command() -> None:
-    msg = make_message("/carrier +919876543210", user_id=123)
-    backend = make_backend()
-    backend.phone_metadata = AsyncMock(return_value={
-        "e164": "+919876543210",
-        "carrier": "Bharti Airtel",
-        "carrier_source": "twilio",
-        "timezones": ["Asia/Kolkata"],
-        "metadata_provider": "twilio_lookup",
-    })
-
-    await carrier_handler(msg, backend)
-    assert "Bharti Airtel" in msg.reply.call_args[0][0]
-    assert "Asia/Kolkata" in msg.reply.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_profile_links_command() -> None:
-    msg = make_message("/profile-links +919876543210 Fraud triage", user_id=123)
-    backend = make_backend()
-    backend.create_investigation = AsyncMock(return_value={"id": "inv-111", "investigation_reference": "INV-001"})
-    backend.start_discovery = AsyncMock(return_value={"id": "job-1", "status": "queued"})
-    backend.get_investigation = AsyncMock(return_value={"investigation": {"status": "completed"}})
-    backend.list_profiles = AsyncMock(return_value={
-        "items": [
+    async def send(self, user_id: int, text: str, chat_type: str = "private") -> None:
+        chat_id = user_id if chat_type == "private" else -100123
+        update = Update.model_validate(
             {
-                "platform": "telegram",
-                "canonical_url": "https://t.me/acme",
-                "verification_status": "VERIFIED_PUBLIC_REFERENCE",
-                "confidence_score": 85,
-                "evidence_description": "Bio match",
-            }
-        ]
-    })
+                "update_id": next(self._update_ids),
+                "message": {
+                    "message_id": next(self._message_ids),
+                    "date": int(time.time()),
+                    "chat": {"id": chat_id, "type": chat_type},
+                    "from": {"id": user_id, "is_bot": False, "first_name": "Tester"},
+                    "text": text,
+                },
+            },
+            context={"bot": self.bot},
+        )
+        await self.dp.feed_update(self.bot, update)
 
-    await profile_links_handler(msg, backend)
-    backend.create_investigation.assert_called_once_with(123, "+919876543210", purpose="Fraud triage")
-
-
-@pytest.mark.asyncio
-async def test_history_command() -> None:
-    msg = make_message("/history", user_id=123)
-    backend = make_backend()
-    backend.list_investigations = AsyncMock(return_value={
-        "total": 1,
-        "items": [
+    async def press(self, user_id: int, callback_data: str) -> None:
+        update = Update.model_validate(
             {
-                "id": "inv-111",
-                "investigation_reference": "INV-001",
-                "status": "completed",
-                "profile_count": 2,
-                "created_at": "2026-11-15T12:00:00Z",
-            }
-        ]
-    })
+                "update_id": next(self._update_ids),
+                "callback_query": {
+                    "id": f"cb{next(self._update_ids)}",
+                    "chat_instance": "ci",
+                    "from": {"id": user_id, "is_bot": False, "first_name": "Tester"},
+                    "message": {
+                        "message_id": 1,
+                        "date": int(time.time()),
+                        "chat": {"id": user_id, "type": "private"},
+                        "from": {"id": 1, "is_bot": True, "first_name": "PhoneIntel"},
+                        "text": "x",
+                    },
+                    "data": callback_data,
+                },
+            },
+            context={"bot": self.bot},
+        )
+        await self.dp.feed_update(self.bot, update)
 
-    await history_handler(msg, backend)
-    backend.list_investigations.assert_called_once_with(123, page=1, page_size=10)
-    assert "INV-001" in msg.reply.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_report_command() -> None:
-    msg = make_message("/report inv-111", user_id=123)
-    backend = make_backend()
-    backend.get_report = AsyncMock(return_value={
-        "investigation_reference": "INV-001",
-        "summary": {
-            "discovered_urls": 4,
-            "verified_public_references": 2,
-            "public_candidates": 1,
-            "unverified": 1,
-        }
-    })
-    backend.export_report = AsyncMock(return_value=b"%PDF-1.4 mock pdf data")
-
-    await report_handler(msg, backend)
-    backend.get_report.assert_called_once_with(123, "inv-111")
-    backend.export_report.assert_called_once_with(123, "inv-111", fmt="pdf")
-    msg.reply_document.assert_called_once()
+    async def close(self) -> None:
+        await self.tracker.shutdown()
+        await self.backend_client.aclose()
 
 
-@pytest.mark.asyncio
-async def test_delete_data_command() -> None:
-    msg = make_message("/delete-data inv-111", user_id=123)
-    backend = make_backend()
-    backend.delete_investigation = AsyncMock()
+@pytest.fixture(scope="module")
+def backend(tmp_path_factory: pytest.TempPathFactory) -> Iterator[LiveBackend]:
+    server = LiveBackend(tmp_path_factory.mktemp("bot-backend")).start()
+    yield server
+    server.stop()
 
-    await delete_data_handler(msg, backend)
-    backend.delete_investigation.assert_called_once_with(123, "inv-111")
-    assert "permanently deleted" in msg.reply.call_args[0][0]
+
+@pytest.fixture(scope="module")
+def service_key(backend: LiveBackend) -> str:
+    return backend.create_service_key()
+
+
+def link_code(backend: LiveBackend, email: str) -> str:
+    with httpx.Client(base_url=backend.base_url) as http:
+        http.post("/api/v1/auth/register", json={"email": email, "password": PASSWORD}).raise_for_status()
+        token = http.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD}).json()["access_token"]
+        r = http.post("/api/v1/integrations/telegram/link-code", headers={"Authorization": f"Bearer {token}"})
+        r.raise_for_status()
+        return str(r.json()["code"])
+
+
+@pytest.fixture
+async def harness(backend: LiveBackend, service_key: str) -> AsyncGenerator[Harness, None]:
+    h = Harness(backend, service_key)
+    yield h
+    await h.close()
+
+
+def test_split_message_respects_limit() -> None:
+    text = "\n".join(f"line {i} " + "x" * 50 for i in range(200))
+    chunks = split_message(text, max_len=500)
+    assert all(len(c) <= 500 for c in chunks)
+    assert "".join(c.replace("\n", "") for c in chunks) == text.replace("\n", "")
+    assert split_message("y" * 1200, max_len=500) == ["y" * 500, "y" * 500, "y" * 200]
+
+
+async def test_static_commands(harness: Harness) -> None:
+    for command, expected in (("/start", "link"), ("/help", "/profile_links"), ("/privacy", "never bypassed")):
+        await harness.send(42, command)
+        assert expected in harness.session.last_text()
+    await harness.send(42, "/nonsense")
+    assert "Unknown command" in harness.session.last_text()
+
+
+async def test_group_chats_are_refused(harness: Harness) -> None:
+    await harness.send(42, "/validate +919876543210", chat_type="supergroup")
+    assert "private chat" in harness.session.last_text()
+    assert len(harness.session.calls) == 1
+
+
+async def test_unlinked_user_is_told_to_link(harness: Harness) -> None:
+    await harness.send(777001, "/validate +919876543210")
+    assert "/link CODE" in harness.session.last_text()
+
+
+async def test_full_linked_flow(harness: Harness, backend: LiveBackend) -> None:
+    uid = 900001
+    await harness.send(uid, "/link " + link_code(backend, "tg-analyst@example.org"))
+    assert "Linked to PHONEINTEL account" in harness.session.last_text()
+    assert any(isinstance(c, DeleteMessage) for c in harness.session.calls)  # code removed from chat
+
+    await harness.send(uid, "/validate +91 98765 43210")
+    assert "+919876543210" in harness.session.last_text() and "VALID" in harness.session.last_text()
+    await harness.send(uid, "/country +919876543210")
+    assert "India" in harness.session.last_text()
+    await harness.send(uid, "/carrier +919876543210")
+    assert "Carrier source" in harness.session.last_text()
+    await harness.send(uid, "/validate +12345")
+    assert "INVALID" in harness.session.last_text() or "POSSIBLE" in harness.session.last_text()
+
+    # Discovery: basis -> purpose -> explicit confirmation, with HTML escaping of user input.
+    await harness.send(uid, "/profile-links +919876543210")
+    assert "Step 1/3" in harness.session.last_text()
+    await harness.press(uid, harness.session.button("Fraud prevention"))
+    assert "Step 2/3" in harness.session.last_text()
+    await harness.send(uid, "short")
+    assert "between 10 and 1000" in harness.session.last_text()
+    await harness.send(uid, "Ticket <b>4411</b> fraud triage")
+    confirm = harness.session.last_text()
+    assert "Step 3/3" in confirm and "&lt;b&gt;4411&lt;/b&gt;" in confirm and "I confirm" in confirm
+    await harness.press(uid, harness.session.button("I confirm"))
+    await harness.tracker.wait_idle()
+    results = "\n".join(harness.session.texts()[-3:])
+    assert "https://t.me/acmehelp" in results
+    assert "VERIFIED_PUBLIC_REFERENCE" in results
+    assert "acme_support" in results
+
+    await harness.send(uid, "/history")
+    history = harness.session.last_text()
+    assert "PI-" in history and "completed" in history
+    reference = history.split("<code>")[1].split("</code>")[0]
+
+    await harness.send(uid, "/report")
+    pdf = harness.session.documents()[-1]
+    assert pdf.document.data.startswith(b"%PDF")  # type: ignore[union-attr]
+    assert pdf.protect_content is True
+    await harness.send(uid, f"/report {reference} json")
+    assert harness.session.documents()[-1].document.filename.endswith(".json")  # type: ignore[union-attr]
+    await harness.press(uid, harness.session.button("CSV"))
+    assert harness.session.documents()[-1].document.filename.endswith(".csv")  # type: ignore[union-attr]
+
+    # Another Telegram user, linked to another account, cannot see any of it.
+    other = 900002
+    await harness.send(other, "/link " + link_code(backend, "tg-other@example.org"))
+    await harness.send(other, "/history")
+    assert "no investigations" in harness.session.last_text()
+    await harness.send(other, f"/report {reference}")
+    assert "No matching investigation" in harness.session.last_text()
+
+    # Erasure with explicit confirmation.
+    await harness.send(uid, "/delete_data")
+    assert "cannot be undone" in harness.session.last_text()
+    await harness.press(uid, harness.session.button("Yes, erase"))
+    assert "Erased 1 investigation" in harness.session.last_text()
+    await harness.send(uid, "/history")
+    assert "no investigations" in harness.session.last_text()
+
+    await harness.send(uid, "/unlink")
+    assert "Unlinked" in harness.session.last_text()
+    await harness.send(uid, "/history")
+    assert "/link CODE" in harness.session.last_text()
+
+
+async def test_cancel_dialog_and_search_public(harness: Harness, backend: LiveBackend) -> None:
+    uid = 900003
+    await harness.send(uid, "/link " + link_code(backend, "tg-cancel@example.org"))
+    await harness.send(uid, "/search_public +919876543210")
+    assert "Step 1/3" in harness.session.last_text()
+    await harness.send(uid, "/cancel")
+    assert "Nothing was created" in harness.session.last_text()
+    await harness.send(uid, "/cancel")
+    assert "Nothing to cancel" in harness.session.last_text()
+    await harness.send(uid, "/history")
+    assert "no investigations" in harness.session.last_text()
+
+
+async def test_rate_limit_and_allowlist(backend: LiveBackend, service_key: str) -> None:
+    limited = Harness(backend, service_key, rate_limit_per_minute=3)
+    try:
+        for _ in range(4):
+            await limited.send(55, "/help")
+        assert "Too many requests" in limited.session.last_text()
+    finally:
+        await limited.close()
+    restricted = Harness(backend, service_key, allowed_user_ids="1,2,3")
+    try:
+        await restricted.send(55, "/help")
+        assert "not authorised" in restricted.session.last_text()
+        await restricted.send(2, "/help")
+        assert "/profile_links" in restricted.session.last_text()
+    finally:
+        await restricted.close()

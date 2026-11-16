@@ -87,9 +87,7 @@ class TelegramLink(UUIDPrimaryKey, Base):
 
     __tablename__ = "telegram_links"
 
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
-    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     telegram_user_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), default=utcnow, server_default=func.now(), nullable=False

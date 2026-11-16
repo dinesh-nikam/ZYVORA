@@ -45,20 +45,57 @@ logger = logging.getLogger(__name__)
 Resolver = Callable[[str, int], Awaitable[list[str]]]
 
 MAX_URL_LENGTH = 2048
-_BLOCKED_HOSTNAMES = frozenset({
-    "localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback", "metadata",
-    "metadata.google.internal", "instance-data", "instance-data.ec2.internal", "kubernetes",
-    "kubernetes.default", "kubernetes.default.svc", "host.docker.internal", "gateway.docker.internal",
-})
-_BLOCKED_SUFFIXES = (
-    ".localhost", ".local", ".internal", ".lan", ".home.arpa", ".corp", ".intranet", ".svc",
-    ".cluster.local", ".localdomain", ".onion",
+_BLOCKED_HOSTNAMES = frozenset(
+    {
+        "localhost",
+        "localhost.localdomain",
+        "ip6-localhost",
+        "ip6-loopback",
+        "metadata",
+        "metadata.google.internal",
+        "instance-data",
+        "instance-data.ec2.internal",
+        "kubernetes",
+        "kubernetes.default",
+        "kubernetes.default.svc",
+        "host.docker.internal",
+        "gateway.docker.internal",
+    }
 )
-_EXTRA_BLOCKED_NETWORKS = tuple(ipaddress.ip_network(n) for n in (
-    "0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15", "198.51.100.0/24",
-    "203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4", "255.255.255.255/32", "64:ff9b:1::/48", "fc00::/7",
-    "fe80::/10", "ff00::/8", "2001:db8::/32", "100::/64",
-))
+_BLOCKED_SUFFIXES = (
+    ".localhost",
+    ".local",
+    ".internal",
+    ".lan",
+    ".home.arpa",
+    ".corp",
+    ".intranet",
+    ".svc",
+    ".cluster.local",
+    ".localdomain",
+    ".onion",
+)
+_EXTRA_BLOCKED_NETWORKS = tuple(
+    ipaddress.ip_network(n)
+    for n in (
+        "0.0.0.0/8",
+        "100.64.0.0/10",
+        "192.0.0.0/24",
+        "192.0.2.0/24",
+        "198.18.0.0/15",
+        "198.51.100.0/24",
+        "203.0.113.0/24",
+        "224.0.0.0/4",
+        "240.0.0.0/4",
+        "255.255.255.255/32",
+        "64:ff9b:1::/48",
+        "fc00::/7",
+        "fe80::/10",
+        "ff00::/8",
+        "2001:db8::/32",
+        "100::/64",
+    )
+)
 _NUMERIC_HOST = re.compile(r"^(0x[0-9a-f]+|[0-9]+)(\.(0x[0-9a-f]+|[0-9]+)){0,3}$", re.IGNORECASE)
 _NAT64 = ipaddress.ip_network("64:ff9b::/96")
 
@@ -120,8 +157,13 @@ def is_forbidden_ip(value: str) -> bool:
         if ip in _NAT64:
             return is_forbidden_ip(str(ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)))
     if (
-        not ip.is_global or ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast
-        or ip.is_reserved or ip.is_unspecified
+        not ip.is_global
+        or ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
     ):
         return True
     return any(ip in net for net in _EXTRA_BLOCKED_NETWORKS if net.version == ip.version)
@@ -245,21 +287,22 @@ class GuardedNetworkBackend(httpcore.AsyncNetworkBackend):
     ) -> httpcore.AsyncNetworkStream:
         host_l = host.lower().rstrip(".")
         try:
-            addresses = await resolve_public(host_l, port, self._resolver,
-                                             allow_private=host_l in self._allow_private)
+            addresses = await resolve_public(host_l, port, self._resolver, allow_private=host_l in self._allow_private)
         except OutboundBlocked as exc:
             raise httpcore.ConnectError(f"blocked by outbound policy: {exc.message}") from exc
         last_error: Exception | None = None
         for address in addresses:
             try:
-                return await self._inner.connect_tcp(address, port, timeout=timeout, local_address=local_address,
-                                                     socket_options=socket_options)
+                return await self._inner.connect_tcp(
+                    address, port, timeout=timeout, local_address=local_address, socket_options=socket_options
+                )
             except (httpcore.ConnectError, httpcore.ConnectTimeout, OSError) as exc:
                 last_error = exc
         raise httpcore.ConnectError(f"could not connect to {host_l}") from last_error
 
-    async def connect_unix_socket(self, path: str, timeout: float | None = None,
-                                  socket_options: Iterable[Any] | None = None) -> httpcore.AsyncNetworkStream:
+    async def connect_unix_socket(
+        self, path: str, timeout: float | None = None, socket_options: Iterable[Any] | None = None
+    ) -> httpcore.AsyncNetworkStream:
         raise httpcore.ConnectError("unix sockets are not permitted")
 
     async def sleep(self, seconds: float) -> None:
@@ -329,8 +372,9 @@ class SafeHttpClient:
             allow_custom_port=trusted,
             allow_ip_literal=trusted,
         )
-        await resolve_public(validated.host, validated.port, self._resolver,
-                             allow_private=validated.host in self._allow_private)
+        await resolve_public(
+            validated.host, validated.port, self._resolver, allow_private=validated.host in self._allow_private
+        )
         return validated
 
     async def fetch(
@@ -353,8 +397,9 @@ class SafeHttpClient:
         limit = self._max_bytes if max_bytes is None else max_bytes
         redirects_left = self._max_redirects if max_redirects is None else max_redirects
         chain: list[RedirectHop] = []
-        current = (await self.preflight(url, allowed_domains=allowed_domains, allow_http=allow_http,
-                                        trusted=trusted)).url
+        current = (
+            await self.preflight(url, allowed_domains=allowed_domains, allow_http=allow_http, trusted=trusted)
+        ).url
         started = time.monotonic()
         while True:
             request = self._client.build_request(method, current, headers=headers, params=params, data=data)
@@ -371,8 +416,11 @@ class SafeHttpClient:
                     redirects_left -= 1
                     target = current.join(response.headers["location"])
                     try:
-                        current = (await self.preflight(str(target), allowed_domains=allowed_domains,
-                                                        allow_http=allow_http, trusted=trusted)).url
+                        current = (
+                            await self.preflight(
+                                str(target), allowed_domains=allowed_domains, allow_http=allow_http, trusted=trusted
+                            )
+                        ).url
                     except OutboundBlocked as exc:
                         reason = exc.details[0]["reason"] if exc.details else "blocked"
                         chain.append(RedirectHop(url=str(target), status_code=0))

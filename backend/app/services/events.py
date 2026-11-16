@@ -35,8 +35,12 @@ class EventBus:
     def _channel(self, investigation_id: uuid.UUID) -> str:
         return f"{self._ns}:{investigation_id}"
 
-    async def publish(self, investigation_id: uuid.UUID, event_type: EventType, data: dict[str, Any] | None = None,
-                      ) -> dict[str, Any]:
+    async def publish(
+        self,
+        investigation_id: uuid.UUID,
+        event_type: EventType,
+        data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         event = {
             "type": event_type.value,
             "investigation_id": str(investigation_id),

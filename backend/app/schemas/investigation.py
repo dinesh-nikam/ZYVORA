@@ -13,14 +13,17 @@ from app.schemas.common import APIModel
 class InvestigationCreateIn(APIModel):
     phone: str = Field(min_length=3, max_length=32, examples=["+919876543210"])
     region: str | None = Field(default=None, min_length=2, max_length=2, pattern=r"^[A-Za-z]{2}$")
-    purpose: str = Field(min_length=10, max_length=1000,
-                         description="Why this investigation is necessary (stored encrypted)")
+    purpose: str = Field(
+        min_length=10, max_length=1000, description="Why this investigation is necessary (stored encrypted)"
+    )
     authorization_basis: AuthorizationBasis
     authorization_reference: str | None = Field(
-        default=None, max_length=200, description="Case/ticket/consent reference (stored encrypted)")
+        default=None, max_length=200, description="Case/ticket/consent reference (stored encrypted)"
+    )
     acknowledge_limitations: bool = Field(
         description="Must be true: the investigator acknowledges results are public-source indications, not "
-                    "proof of identity, and that the stated authorization basis applies.")
+        "proof of identity, and that the stated authorization basis applies."
+    )
 
 
 class PhoneIntelligenceOut(APIModel):
@@ -64,13 +67,16 @@ class InvestigationListItem(APIModel):
 
 
 class DiscoveryIn(APIModel):
-    platforms: list[str] | None = Field(default=None, max_length=32,
-                                        description="Platform keys; default = all supported platforms")
+    platforms: list[str] | None = Field(
+        default=None, max_length=32, description="Platform keys; default = all supported platforms"
+    )
     include_web_search: bool = True
-    profile_urls: list[str] | None = Field(default=None, max_length=25,
-                                           description="Investigator-supplied profile URLs to verify")
-    live_checks: bool = Field(default=True, description="Perform permitted live checks (official APIs, "
-                                                        "robots-permitted public pages)")
+    profile_urls: list[str] | None = Field(
+        default=None, max_length=25, description="Investigator-supplied profile URLs to verify"
+    )
+    live_checks: bool = Field(
+        default=True, description="Perform permitted live checks (official APIs, robots-permitted public pages)"
+    )
 
 
 class JobOut(APIModel):

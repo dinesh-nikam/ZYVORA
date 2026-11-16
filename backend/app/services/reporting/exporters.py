@@ -24,8 +24,12 @@ from app.schemas.report import InvestigationReport
 logger = logging.getLogger(__name__)
 
 _TEMPLATES = Path(__file__).parent / "templates"
-_env = Environment(loader=FileSystemLoader(_TEMPLATES), autoescape=select_autoescape(["html", "j2"]),
-                   trim_blocks=True, lstrip_blocks=True)
+_env = Environment(
+    loader=FileSystemLoader(_TEMPLATES),
+    autoescape=select_autoescape(["html", "j2"]),
+    trim_blocks=True,
+    lstrip_blocks=True,
+)
 
 _FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -71,16 +75,38 @@ def csv_safe(value: object) -> str:
 def to_csv(report: InvestigationReport) -> bytes:
     buffer = io.StringIO()
     writer = csv.writer(buffer, quoting=csv.QUOTE_ALL, lineterminator="\n")
-    writer.writerow(["investigation_reference", "platform", "profile_url", "verification_status",
-                     "confidence_level", "confidence_score", "discovery_source", "evidence_description",
-                     "evidence_sources", "verified_at"])
+    writer.writerow(
+        [
+            "investigation_reference",
+            "platform",
+            "profile_url",
+            "verification_status",
+            "confidence_level",
+            "confidence_score",
+            "discovery_source",
+            "evidence_description",
+            "evidence_sources",
+            "verified_at",
+        ]
+    )
     for p in report.profiles:
-        writer.writerow([csv_safe(v) for v in (
-            report.investigation_reference, p.platform, p.canonical_url, p.verification_status,
-            p.confidence_level, p.confidence_score, p.discovery_source, p.evidence_description,
-            " | ".join(f"{e.discovery_method}:{e.source_url}" for e in p.evidence),
-            p.verified_at.isoformat() if p.verified_at else "",
-        )])
+        writer.writerow(
+            [
+                csv_safe(v)
+                for v in (
+                    report.investigation_reference,
+                    p.platform,
+                    p.canonical_url,
+                    p.verification_status,
+                    p.confidence_level,
+                    p.confidence_score,
+                    p.discovery_source,
+                    p.evidence_description,
+                    " | ".join(f"{e.discovery_method}:{e.source_url}" for e in p.evidence),
+                    p.verified_at.isoformat() if p.verified_at else "",
+                )
+            ]
+        )
     return ("\ufeff" + buffer.getvalue()).encode("utf-8")
 
 
@@ -137,8 +163,9 @@ def to_pdf(report: InvestigationReport, *, font_path: str | None = None) -> byte
         pdf.set_font(family, size=9)
 
     def line(label: str, value: object) -> None:
-        pdf.multi_cell(width, 5, t(f"{label}: {value if value not in (None, '') else '-'}"),
-                       new_x="LMARGIN", new_y="NEXT")
+        pdf.multi_cell(
+            width, 5, t(f"{label}: {value if value not in (None, '') else '-'}"), new_x="LMARGIN", new_y="NEXT"
+        )
 
     pdf.set_font(family, size=16)
     pdf.cell(width, 9, t("PHONEINTEL Investigation Report"), new_x="LMARGIN", new_y="NEXT")

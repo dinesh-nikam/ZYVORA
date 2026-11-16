@@ -78,8 +78,12 @@ class DiscoveryJobRunner:
             if job is None:
                 logger.warning("job vanished before execution", extra={"job_id": str(job_id)})
                 return JobOutcome(JobStatus.CANCELLED)
-            if job.status in (JobStatus.SUCCEEDED.value, JobStatus.CANCELLED.value, JobStatus.DEAD_LETTER.value,
-                              JobStatus.FAILED.value):
+            if job.status in (
+                JobStatus.SUCCEEDED.value,
+                JobStatus.CANCELLED.value,
+                JobStatus.DEAD_LETTER.value,
+                JobStatus.FAILED.value,
+            ):
                 return JobOutcome(JobStatus(job.status))
             if job.cancel_requested_at is not None:
                 raise DiscoveryCancelled
@@ -97,9 +101,16 @@ class DiscoveryJobRunner:
         events = self.c.events
         if attempt == 1:
             await events.publish(investigation_id, EventType.INVESTIGATION_STARTED, {"job_id": str(job_id)})
-        await events.publish(investigation_id, EventType.DISCOVERY_STARTED,
-                             {"job_id": str(job_id), "attempt": attempt, "platforms": params["platforms"],
-                              "web_search": params["include_web_search"]})
+        await events.publish(
+            investigation_id,
+            EventType.DISCOVERY_STARTED,
+            {
+                "job_id": str(job_id),
+                "attempt": attempt,
+                "platforms": params["platforms"],
+                "web_search": params["include_web_search"],
+            },
+        )
 
         async def cancelled() -> bool:
             async with sm() as s:
@@ -114,11 +125,21 @@ class DiscoveryJobRunner:
         # 1) Investigator-supplied URLs.
         for url in params.get("profile_urls", []):
             outcome = await self.c.verification.verify(
-                url, variants=variants, discovery_source=DiscoverySource.USER_PROVIDED, live_check=live,
-                prior_evidence=[EvidenceItem(
-                    source_url=url[:2048], source_type=EvidenceSourceType.USER_SUBMISSION,
-                    source_name="investigator", reliability=SourceReliability.INFORMATIONAL,
-                    summary="URL submitted by the investigator.", phone_reference_found=False, on_profile=False)],
+                url,
+                variants=variants,
+                discovery_source=DiscoverySource.USER_PROVIDED,
+                live_check=live,
+                prior_evidence=[
+                    EvidenceItem(
+                        source_url=url[:2048],
+                        source_type=EvidenceSourceType.USER_SUBMISSION,
+                        source_name="investigator",
+                        reliability=SourceReliability.INFORMATIONAL,
+                        summary="URL submitted by the investigator.",
+                        phone_reference_found=False,
+                        on_profile=False,
+                    )
+                ],
             )
             outcomes.append(outcome)
             await self._store(investigation_id, outcome)
@@ -132,6 +153,7 @@ class DiscoveryJobRunner:
         # 3) Public web search.
         search = SearchRunResult()
         if params.get("include_web_search", True):
+
             async def progress(data: dict[str, object]) -> None:
                 await events.publish(investigation_id, EventType.DISCOVERY_PROGRESS, {"phase": "search", **data})
 
@@ -151,14 +173,20 @@ class DiscoveryJobRunner:
                 if await cancelled():
                     raise DiscoveryCancelled
                 outcome = await self.c.verification.verify(
-                    candidate.ref.canonical_url, variants=variants, discovery_source=candidate.discovery_source,
-                    prior_evidence=candidate.evidence, live_check=live,
+                    candidate.ref.canonical_url,
+                    variants=variants,
+                    discovery_source=candidate.discovery_source,
+                    prior_evidence=candidate.evidence,
+                    live_check=live,
                 )
                 outcomes.append(outcome)
                 await self._store(investigation_id, outcome)
                 done += 1
-                await events.publish(investigation_id, EventType.DISCOVERY_PROGRESS,
-                                     {"phase": "verification", "verified": done, "total": total})
+                await events.publish(
+                    investigation_id,
+                    EventType.DISCOVERY_PROGRESS,
+                    {"phase": "verification", "verified": done, "total": total},
+                )
 
         await asyncio.gather(*(verify(c) for c in candidates.values()))
         if await cancelled():
@@ -178,11 +206,19 @@ class DiscoveryJobRunner:
             inv.status = InvestigationStatus.COMPLETED.value
             inv.completed_at = utcnow()
             inv.summary = summary
-            record(session, AuditContext(user_id, None, "worker"), "discovery.completed", "investigation",
-                   investigation_id, job_id=str(job_id), profiles=len(outcomes))
+            record(
+                session,
+                AuditContext(user_id, None, "worker"),
+                "discovery.completed",
+                "investigation",
+                investigation_id,
+                job_id=str(job_id),
+                profiles=len(outcomes),
+            )
         DISCOVERY_JOBS.labels(status="succeeded").inc()
-        await events.publish(investigation_id, EventType.INVESTIGATION_COMPLETED,
-                             {"job_id": str(job_id), "summary": summary["counts"]})
+        await events.publish(
+            investigation_id, EventType.INVESTIGATION_COMPLETED, {"job_id": str(job_id), "summary": summary["counts"]}
+        )
         return JobOutcome(JobStatus.SUCCEEDED)
 
     async def _store(self, investigation_id: uuid.UUID, outcome: VerificationOutcome) -> None:
@@ -191,16 +227,24 @@ class DiscoveryJobRunner:
             profile_id = profile.id
         PROFILES_DISCOVERED.labels(platform=outcome.platform or "unknown", status=outcome.status.value).inc()
         common = {"profile_id": str(profile_id), "platform": outcome.platform, "url": outcome.canonical_url}
-        await self.c.events.publish(investigation_id, EventType.PROFILE_DISCOVERED,
-                                    {**common, "source": outcome.discovery_source.value})
-        await self.c.events.publish(investigation_id, EventType.PROFILE_VERIFIED, {
-            **common, "status": outcome.status.value, "confidence": outcome.confidence.level.value,
-            "score": outcome.confidence.score,
-        })
+        await self.c.events.publish(
+            investigation_id, EventType.PROFILE_DISCOVERED, {**common, "source": outcome.discovery_source.value}
+        )
+        await self.c.events.publish(
+            investigation_id,
+            EventType.PROFILE_VERIFIED,
+            {
+                **common,
+                "status": outcome.status.value,
+                "confidence": outcome.confidence.level.value,
+                "score": outcome.confidence.score,
+            },
+        )
 
     @staticmethod
-    def _summary(outcomes: list[VerificationOutcome], search: SearchRunResult, variants: NumberVariants,
-                 platforms: list[str]) -> dict[str, Any]:
+    def _summary(
+        outcomes: list[VerificationOutcome], search: SearchRunResult, variants: NumberVariants, platforms: list[str]
+    ) -> dict[str, Any]:
         counts = {status.value: 0 for status in VerificationStatus}
         for o in outcomes:
             counts[o.status.value] += 1
@@ -240,8 +284,9 @@ class DiscoveryJobRunner:
                 return
             job.status = JobStatus.CANCELLED.value
             job.completed_at = utcnow()
-            inv = await InvestigationRepository(session).get(job.investigation_id, owner_id=None,
-                                                             include_deleted=True, for_update=True)
+            inv = await InvestigationRepository(session).get(
+                job.investigation_id, owner_id=None, include_deleted=True, for_update=True
+            )
             if inv is not None and inv.status not in (InvestigationStatus.COMPLETED.value,):
                 inv.status = InvestigationStatus.CANCELLED.value
                 investigation_id = inv.id
@@ -271,12 +316,17 @@ class DiscoveryJobRunner:
         if final:
             DISCOVERY_JOBS.labels(status="dead_letter").inc()
             await self.c.redis.rpush(DLQ_KEY, str(job_id))  # type: ignore[misc]
-            await self.c.events.publish(investigation_id, EventType.INVESTIGATION_FAILED,
-                                        {"job_id": str(job_id), "error_code": code, "attempts": attempt})
+            await self.c.events.publish(
+                investigation_id,
+                EventType.INVESTIGATION_FAILED,
+                {"job_id": str(job_id), "error_code": code, "attempts": attempt},
+            )
             return JobOutcome(JobStatus.DEAD_LETTER)
         DISCOVERY_JOBS.labels(status="retrying").inc()
         delay = self.backoff(attempt)
-        await self.c.events.publish(investigation_id, EventType.DISCOVERY_PROGRESS,
-                                    {"phase": "retry_scheduled", "attempt": attempt, "retry_in_seconds": delay,
-                                     "error_code": code})
+        await self.c.events.publish(
+            investigation_id,
+            EventType.DISCOVERY_PROGRESS,
+            {"phase": "retry_scheduled", "attempt": attempt, "retry_in_seconds": delay, "error_code": code},
+        )
         return JobOutcome(JobStatus.RETRYING, retry_in=delay)

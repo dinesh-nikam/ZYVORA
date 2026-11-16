@@ -15,8 +15,10 @@ request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 # Defence in depth: scrub anything that looks like a credential or a phone
 # number from log messages, even if a developer logs it by mistake.
 _REDACTIONS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"(?i)(authorization|x-api-key|api[_-]?key|token|secret|password)(\"?\s*[:=]\s*\"?)[^\s\",}]+"),
-     r"\1\2[REDACTED]"),
+    (
+        re.compile(r"(?i)(authorization|x-api-key|api[_-]?key|token|secret|password)(\"?\s*[:=]\s*\"?)[^\s\",}]+"),
+        r"\1\2[REDACTED]",
+    ),
     (re.compile(r"\bpi_[0-9a-f]{8}_[A-Za-z0-9_\-]{20,}"), "[REDACTED_API_KEY]"),
     (re.compile(r"\brt_[A-Za-z0-9_\-]{20,}"), "[REDACTED_REFRESH_TOKEN]"),
     (re.compile(r"\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+"), "[REDACTED_JWT]"),

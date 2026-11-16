@@ -55,8 +55,12 @@ async def create_investigation(
     if not body.acknowledge_limitations:
         raise ValidationFailed("You must acknowledge the investigation limitations", code="acknowledgement_required")
     inv = await service.create(
-        principal, phone=body.phone, region=body.region, purpose=body.purpose,
-        authorization_basis=body.authorization_basis, authorization_reference=body.authorization_reference,
+        principal,
+        phone=body.phone,
+        region=body.region,
+        purpose=body.purpose,
+        authorization_basis=body.authorization_basis,
+        authorization_reference=body.authorization_reference,
         ctx=audit_context(request, principal),
     )
     return _out(inv)
@@ -79,15 +83,25 @@ async def list_investigations(
 ) -> PageOut[InvestigationListItem]:
     phone_hash = service.phone_hash(container.phone.analyze(phone).e164) if phone else None
     result = await service.investigations.list(
-        owner_id=principal.id, status=status_filter.value if status_filter else None,
-        authorization_basis=authorization_basis.value if authorization_basis else None, phone_hash=phone_hash,
-        reference=reference, created_from=created_from, created_to=created_to, sort=sort, page=page,
+        owner_id=principal.id,
+        status=status_filter.value if status_filter else None,
+        authorization_basis=authorization_basis.value if authorization_basis else None,
+        phone_hash=phone_hash,
+        reference=reference,
+        created_from=created_from,
+        created_to=created_to,
+        sort=sort,
+        page=page,
         page_size=page_size,
     )
     items = [
         InvestigationListItem(
-            id=i.id, investigation_reference=i.investigation_reference, normalized_phone=i.normalized_phone,
-            authorization_basis=i.authorization_basis, status=i.status, created_at=i.created_at,
+            id=i.id,
+            investigation_reference=i.investigation_reference,
+            normalized_phone=i.normalized_phone,
+            authorization_basis=i.authorization_basis,
+            status=i.status,
+            created_at=i.created_at,
             completed_at=i.completed_at,
             profile_count=int((i.summary or {}).get("counts", {}).get("total_profiles", 0)),
         )
@@ -130,8 +144,12 @@ async def cancel_investigation(
     return _out(await service.cancel(principal, investigation_id, audit_context(request, principal)))
 
 
-@router.post("/{investigation_id}/profile-discovery", response_model=JobOut, status_code=status.HTTP_202_ACCEPTED,
-             dependencies=[Depends(rate_limit("discovery", "rate_limit_discovery"))])
+@router.post(
+    "/{investigation_id}/profile-discovery",
+    response_model=JobOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(rate_limit("discovery", "rate_limit_discovery"))],
+)
 async def start_profile_discovery(
     investigation_id: uuid.UUID,
     body: DiscoveryIn,
@@ -144,8 +162,9 @@ async def start_profile_discovery(
     """Queue public-source discovery.  Send an ``Idempotency-Key`` header to make retries safe; only one
     active discovery job per investigation is allowed."""
     req = validate_discovery_request(body.platforms, body.profile_urls, body.include_web_search, body.live_checks)
-    job, created = await service.start_discovery(principal, investigation_id, req, key,
-                                                 audit_context(request, principal))
+    job, created = await service.start_discovery(
+        principal, investigation_id, req, key, audit_context(request, principal)
+    )
     if not created:
         response.headers["Idempotent-Replayed"] = "true"
         await service.session.refresh(job)
@@ -166,15 +185,31 @@ async def list_profiles(
 ) -> PageOut[ProfileOut]:
     inv = await service.get(principal, investigation_id)
     result = await ProfileRepository(service.session).list(
-        inv.id, platform=platform, status=verification_status.value if verification_status else None,
-        min_confidence=min_confidence, sort=sort, page=page, page_size=page_size,
+        inv.id,
+        platform=platform,
+        status=verification_status.value if verification_status else None,
+        min_confidence=min_confidence,
+        sort=sort,
+        page=page,
+        page_size=page_size,
     )
-    return PageOut(items=[ProfileOut.model_validate(p) for p in result.items], total=result.total,
-                   page=result.page, page_size=result.page_size)
+    return PageOut(
+        items=[ProfileOut.model_validate(p) for p in result.items],
+        total=result.total,
+        page=result.page,
+        page_size=result.page_size,
+    )
 
 
-async def _report(service: InvestigationService, principal: Principal, investigation_id: uuid.UUID,
-                  request: Request, mask_phone: bool, action: str, fmt: str) -> InvestigationReport:
+async def _report(
+    service: InvestigationService,
+    principal: Principal,
+    investigation_id: uuid.UUID,
+    request: Request,
+    mask_phone: bool,
+    action: str,
+    fmt: str,
+) -> InvestigationReport:
     principal.require(Permission.REPORT_READ)
     inv = await service.investigations.get(investigation_id, owner_id=owner_scope(principal))
     if inv is None:
@@ -182,8 +217,16 @@ async def _report(service: InvestigationService, principal: Principal, investiga
 
         raise NotFound("Investigation not found")
     report = await ReportBuilder(service.session).build(inv, mask_phone=mask_phone)
-    audit.record(service.session, audit_context(request, principal), action, "investigation", inv.id,
-                 format=fmt, masked=mask_phone, owner_access=inv.user_id == principal.id)
+    audit.record(
+        service.session,
+        audit_context(request, principal),
+        action,
+        "investigation",
+        inv.id,
+        format=fmt,
+        masked=mask_phone,
+        owner_access=inv.user_id == principal.id,
+    )
     await service.session.commit()
     return report
 
@@ -199,9 +242,11 @@ async def get_report(
     return await _report(service, principal, investigation_id, request, mask_phone, "report.view", "json")
 
 
-@router.get("/{investigation_id}/report/export", response_class=Response,
-            responses={200: {"content": {v: {} for v in MEDIA_TYPES.values()},
-                             "description": "Report file download"}})
+@router.get(
+    "/{investigation_id}/report/export",
+    response_class=Response,
+    responses={200: {"content": {v: {} for v in MEDIA_TYPES.values()}, "description": "Report file download"}},
+)
 async def export_report(
     investigation_id: uuid.UUID,
     request: Request,
@@ -211,8 +256,9 @@ async def export_report(
     service: InvestigationService = Depends(get_investigation_service),
     container: Container = Depends(get_container),
 ) -> Response:
-    report = await _report(service, principal, investigation_id, request, mask_phone, "report.export",
-                           export_format.value)
+    report = await _report(
+        service, principal, investigation_id, request, mask_phone, "report.export", export_format.value
+    )
     payload = export(report, export_format, pdf_font_path=container.settings.pdf_font_path)
     filename = f"{report.investigation_reference}.{export_format.value}"
     return Response(

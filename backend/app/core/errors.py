@@ -14,8 +14,15 @@ class AppError(Exception):
     status_code: int = 400
     code: str = "bad_request"
 
-    def __init__(self, message: str, *, code: str | None = None, details: list[Any] | None = None,
-                 status_code: int | None = None, headers: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str | None = None,
+        details: list[Any] | None = None,
+        status_code: int | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(message)
         self.message = message
         if code:

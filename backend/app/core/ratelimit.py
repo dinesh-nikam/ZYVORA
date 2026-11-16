@@ -52,8 +52,9 @@ class RateLimiter:
             count, _ = await pipe.execute()
         count = int(count)
         retry_after = window_start + rule.window_seconds - now
-        return RateLimitResult(allowed=count <= rule.limit, remaining=max(rule.limit - count, 0),
-                               retry_after=max(retry_after, 1))
+        return RateLimitResult(
+            allowed=count <= rule.limit, remaining=max(rule.limit - count, 0), retry_after=max(retry_after, 1)
+        )
 
     async def enforce(self, scope: str, identity: str, rule: RateLimitRule) -> RateLimitResult:
         result = await self.hit(scope, identity, rule)

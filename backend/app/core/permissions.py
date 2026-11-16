@@ -22,17 +22,19 @@ class Permission(StrEnum):
     TELEGRAM_ACT_AS = "telegram:act_as"
 
 
-ANALYST_PERMISSIONS: frozenset[Permission] = frozenset({
-    Permission.PHONE_VALIDATE,
-    Permission.INVESTIGATION_CREATE,
-    Permission.INVESTIGATION_READ,
-    Permission.INVESTIGATION_DELETE,
-    Permission.DISCOVERY_RUN,
-    Permission.PROFILE_VERIFY,
-    Permission.REPORT_READ,
-    Permission.APIKEY_MANAGE,
-    Permission.SELF_DATA_MANAGE,
-})
+ANALYST_PERMISSIONS: frozenset[Permission] = frozenset(
+    {
+        Permission.PHONE_VALIDATE,
+        Permission.INVESTIGATION_CREATE,
+        Permission.INVESTIGATION_READ,
+        Permission.INVESTIGATION_DELETE,
+        Permission.DISCOVERY_RUN,
+        Permission.PROFILE_VERIFY,
+        Permission.REPORT_READ,
+        Permission.APIKEY_MANAGE,
+        Permission.SELF_DATA_MANAGE,
+    }
+)
 
 BUILTIN_ROLES: dict[str, frozenset[Permission]] = {
     "admin": frozenset(Permission) - {Permission.TELEGRAM_ACT_AS},

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import httpx
 import pytest
-
 from app.services.container import Container
+
 from tests.conftest import make_settings, register_and_login
 
 
@@ -48,6 +48,7 @@ async def test_login_failure_is_generic(client: httpx.AsyncClient) -> None:
 async def test_account_lockout(tmp_path, web) -> None:
     from app.main import create_app
     from app.services.container import build_container
+
     from tests.conftest import _prepare_db
 
     settings = make_settings(tmp_path, max_failed_logins=3)
@@ -117,6 +118,7 @@ async def test_api_key_cannot_escalate(client: httpx.AsyncClient) -> None:
 async def test_pending_accounts_cannot_login(tmp_path, web) -> None:
     from app.main import create_app
     from app.services.container import build_container
+
     from tests.conftest import _prepare_db
 
     settings = make_settings(tmp_path, default_user_status="pending")
@@ -137,6 +139,7 @@ async def test_pending_accounts_cannot_login(tmp_path, web) -> None:
 async def test_auth_rate_limit(tmp_path, web) -> None:
     from app.main import create_app
     from app.services.container import build_container
+
     from tests.conftest import _prepare_db
 
     settings = make_settings(tmp_path, rate_limit_auth="3/minute")

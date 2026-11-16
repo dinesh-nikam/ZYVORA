@@ -33,25 +33,38 @@ async def purge_expired(sessionmaker: Any, settings: Settings) -> PurgeReport:
     now = utcnow()
     async with transaction(sessionmaker) as session:
         repo = InvestigationRepository(session)
-        expired = (await session.execute(
-            select(Investigation).where(Investigation.deleted_at.is_(None), Investigation.expires_at <= now)
-        )).scalars().all()
+        expired = (
+            (
+                await session.execute(
+                    select(Investigation).where(Investigation.deleted_at.is_(None), Investigation.expires_at <= now)
+                )
+            )
+            .scalars()
+            .all()
+        )
         for inv in expired:
             await repo.erase_content(inv, now)
         report.investigations_expired = len(expired)
 
         tombstone_cutoff = now - timedelta(days=settings.deleted_tombstone_days)
-        result = await session.execute(delete(Investigation).where(
-            Investigation.deleted_at.is_not(None), Investigation.deleted_at <= tombstone_cutoff))
+        result = await session.execute(
+            delete(Investigation).where(
+                Investigation.deleted_at.is_not(None), Investigation.deleted_at <= tombstone_cutoff
+            )
+        )
         report.tombstones_removed = result.rowcount or 0  # type: ignore[attr-defined]
 
         result = await session.execute(delete(EvidenceSource).where(EvidenceSource.expiration_at <= now))
         report.evidence_removed = result.rowcount or 0  # type: ignore[attr-defined]
 
-        result = await session.execute(delete(RefreshToken).where(or_(
-            RefreshToken.expires_at <= now,
-            RefreshToken.revoked_at <= now - timedelta(days=7),
-        )))
+        result = await session.execute(
+            delete(RefreshToken).where(
+                or_(
+                    RefreshToken.expires_at <= now,
+                    RefreshToken.revoked_at <= now - timedelta(days=7),
+                )
+            )
+        )
         report.refresh_tokens_removed = result.rowcount or 0  # type: ignore[attr-defined]
 
         audit_cutoff = now - timedelta(days=settings.retention_audit_days)

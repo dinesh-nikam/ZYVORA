@@ -74,29 +74,38 @@ def create_app(settings: Settings | None = None, container: Container | None = N
 
     @app.exception_handler(AppError)
     async def app_error(request: Request, exc: AppError) -> JSONResponse:
-        return JSONResponse(status_code=exc.status_code, headers=exc.headers,
-                            content=error_body(exc.code, exc.message, _request_id(request), exc.details))
+        return JSONResponse(
+            status_code=exc.status_code,
+            headers=exc.headers,
+            content=error_body(exc.code, exc.message, _request_id(request), exc.details),
+        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
         details: list[dict[str, Any]] = [
             {"loc": list(e.get("loc", [])), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()
         ]
-        return JSONResponse(status_code=422, content=error_body("validation_error", "Request validation failed",
-                                                                _request_id(request), details))
+        return JSONResponse(
+            status_code=422,
+            content=error_body("validation_error", "Request validation failed", _request_id(request), details),
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         code = {404: "not_found", 405: "method_not_allowed", 400: "bad_request"}.get(exc.status_code, "http_error")
         message = exc.detail if isinstance(exc.detail, str) else "HTTP error"
-        return JSONResponse(status_code=exc.status_code, content=error_body(code, message, _request_id(request)),
-                            headers=getattr(exc, "headers", None))
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=error_body(code, message, _request_id(request)),
+            headers=getattr(exc, "headers", None),
+        )
 
     @app.exception_handler(Exception)
     async def unhandled(request: Request, exc: Exception) -> JSONResponse:
         logger.exception("unhandled error")
-        return JSONResponse(status_code=500, content=error_body("internal_error", "Internal server error",
-                                                                _request_id(request)))
+        return JSONResponse(
+            status_code=500, content=error_body("internal_error", "Internal server error", _request_id(request))
+        )
 
     app.include_router(health_router)
     app.include_router(api_router, prefix=settings.api_prefix)
@@ -113,8 +122,9 @@ def create_app(settings: Settings | None = None, container: Container | None = N
             max_age=600,
         )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
-    app.add_middleware(RequestContextMiddleware, max_body_bytes=settings.max_request_body_bytes,
-                       hsts=settings.force_https)
+    app.add_middleware(
+        RequestContextMiddleware, max_body_bytes=settings.max_request_body_bytes, hsts=settings.force_https
+    )
     if settings.force_https:
         app.add_middleware(HttpsEnforcementMiddleware)
     return app

@@ -56,8 +56,9 @@ class Principal:
 
     def require(self, permission: Permission) -> None:
         if permission not in self.permissions:
-            raise PermissionDenied("You do not have permission to perform this action",
-                                   details=[{"required": permission.value}])
+            raise PermissionDenied(
+                "You do not have permission to perform this action", details=[{"required": permission.value}]
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,8 +81,9 @@ def _ensure_active(user: User) -> None:
 
 
 class AuthService:
-    def __init__(self, session: AsyncSession, settings: Settings, tokens: TokenService, redis: Redis,
-                 indexer: BlindIndexer) -> None:
+    def __init__(
+        self, session: AsyncSession, settings: Settings, tokens: TokenService, redis: Redis, indexer: BlindIndexer
+    ) -> None:
         self.session = session
         self.settings = settings
         self.tokens = tokens
@@ -93,8 +95,16 @@ class AuthService:
         self.links = TelegramLinkRepository(session)
 
     # ----------------------------------------------------------- registration
-    async def register(self, email: str, password: str, ctx: AuditContext, *, role_name: str = DEFAULT_ROLE,
-                       status: str | None = None, bypass_closed: bool = False) -> User:
+    async def register(
+        self,
+        email: str,
+        password: str,
+        ctx: AuditContext,
+        *,
+        role_name: str = DEFAULT_ROLE,
+        status: str | None = None,
+        bypass_closed: bool = False,
+    ) -> User:
         if not self.settings.registration_open and not bypass_closed:
             raise PermissionDenied("Self-registration is disabled", code="registration_closed")
         email = email.strip().lower()
@@ -104,15 +114,24 @@ class AuthService:
         role = await self.users.role_by_name(role_name)
         if role is None:
             raise ValidationFailed("Unknown role", code="invalid_role")
-        user = await self.users.add(User(
-            email=email,
-            password_hash=hash_password(password),
-            status=status or self.settings.default_user_status,
-            role_id=role.id,
-            role=role,
-        ))
-        audit.record(self.session, AuditContext(user.id, ctx.ip_address, ctx.via), "auth.register", "user",
-                     user.id, role=role.name, status=user.status)
+        user = await self.users.add(
+            User(
+                email=email,
+                password_hash=hash_password(password),
+                status=status or self.settings.default_user_status,
+                role_id=role.id,
+                role=role,
+            )
+        )
+        audit.record(
+            self.session,
+            AuditContext(user.id, ctx.ip_address, ctx.via),
+            "auth.register",
+            "user",
+            user.id,
+            role=role.name,
+            status=user.status,
+        )
         return user
 
     # ------------------------------------------------------------------ login
@@ -128,8 +147,14 @@ class AuthService:
                     if user.failed_login_count >= self.settings.max_failed_logins:
                         user.locked_until = now + timedelta(minutes=self.settings.lockout_minutes)
                         user.failed_login_count = 0
-                audit.record(self.session, AuditContext(user.id, ctx.ip_address, ctx.via), "auth.login_failed",
-                             "user", user.id, reason="locked" if locked else "bad_password")
+                audit.record(
+                    self.session,
+                    AuditContext(user.id, ctx.ip_address, ctx.via),
+                    "auth.login_failed",
+                    "user",
+                    user.id,
+                    reason="locked" if locked else "bad_password",
+                )
                 await self.session.commit()
             raise AuthenticationFailed("Invalid email or password", code="invalid_credentials")
         _ensure_active(user)
@@ -145,10 +170,14 @@ class AuthService:
     async def _issue_pair(self, user: User, *, family_id: uuid.UUID) -> TokenPair:
         access, claims = self.tokens.issue_access_token(user.id, user.role.name)
         refresh_plain, refresh_hash = new_refresh_token()
-        await self.refresh_tokens.add(RefreshToken(
-            user_id=user.id, token_hash=refresh_hash, family_id=family_id,
-            expires_at=utcnow() + self.tokens.refresh_ttl,
-        ))
+        await self.refresh_tokens.add(
+            RefreshToken(
+                user_id=user.id,
+                token_hash=refresh_hash,
+                family_id=family_id,
+                expires_at=utcnow() + self.tokens.refresh_ttl,
+            )
+        )
         return TokenPair(
             access_token=access,
             access_expires_in=int((claims.expires_at - utcnow()).total_seconds()),
@@ -165,11 +194,17 @@ class AuthService:
         if row.revoked_at is not None:
             # Reuse of a rotated/revoked token => likely theft: kill the whole family.
             await self.refresh_tokens.revoke_family(row.family_id, now)
-            audit.record(self.session, AuditContext(row.user_id, ctx.ip_address, ctx.via),
-                         "auth.refresh_token_reuse_detected", "user", row.user_id)
+            audit.record(
+                self.session,
+                AuditContext(row.user_id, ctx.ip_address, ctx.via),
+                "auth.refresh_token_reuse_detected",
+                "user",
+                row.user_id,
+            )
             await self.session.commit()
-            raise AuthenticationFailed("Refresh token reuse detected; all sessions in this chain were revoked",
-                                       code="refresh_token_reused")
+            raise AuthenticationFailed(
+                "Refresh token reuse detected; all sessions in this chain were revoked", code="refresh_token_reused"
+            )
         if row.expires_at <= now:
             raise AuthenticationFailed("Refresh token expired", code="refresh_token_expired")
         user = await self.users.get(row.user_id)
@@ -184,8 +219,9 @@ class AuthService:
         return pair
 
     # ----------------------------------------------------------------- logout
-    async def logout(self, principal: Principal, refresh_token: str | None, ctx: AuditContext, *,
-                     all_sessions: bool = False) -> None:
+    async def logout(
+        self, principal: Principal, refresh_token: str | None, ctx: AuditContext, *, all_sessions: bool = False
+    ) -> None:
         now = utcnow()
         if all_sessions:
             await self.refresh_tokens.revoke_all_for_user(principal.id, now)
@@ -208,8 +244,13 @@ class AuthService:
         if user is None:
             raise AuthenticationFailed("Invalid access token", code="invalid_token")
         _ensure_active(user)
-        return Principal(user=user, permissions=_role_permissions(user), via="jwt", token_jti=claims.jti,
-                         token_expires_at=claims.expires_at)
+        return Principal(
+            user=user,
+            permissions=_role_permissions(user),
+            via="jwt",
+            token_jti=claims.jti,
+            token_expires_at=claims.expires_at,
+        )
 
     async def authenticate_api_key(self, key: str) -> Principal:
         row = await self.api_keys.by_hash(hash_opaque_token(key))
@@ -225,8 +266,14 @@ class AuthService:
         return Principal(user=user, permissions=effective, via="api_key", api_key_id=row.id)
 
     # --------------------------------------------------------------- API keys
-    async def create_api_key(self, principal: Principal, name: str, permissions: list[str] | None,
-                             expires_in_days: int | None, ctx: AuditContext) -> tuple[ApiKey, str]:
+    async def create_api_key(
+        self,
+        principal: Principal,
+        name: str,
+        permissions: list[str] | None,
+        expires_in_days: int | None,
+        ctx: AuditContext,
+    ) -> tuple[ApiKey, str]:
         if principal.via == "telegram":
             raise PermissionDenied("API keys cannot be created through the Telegram integration")
         role_perms = _role_permissions(principal.user)
@@ -234,16 +281,22 @@ class AuthService:
         if permissions and len(requested) != len(set(permissions)):
             raise ValidationFailed("Unknown permission requested", code="invalid_permission")
         if not requested <= role_perms:
-            raise PermissionDenied("Cannot grant permissions you do not hold",
-                                   details=[{"not_held": sorted(p.value for p in requested - role_perms)}])
+            raise PermissionDenied(
+                "Cannot grant permissions you do not hold",
+                details=[{"not_held": sorted(p.value for p in requested - role_perms)}],
+            )
         plaintext, prefix, digest = new_api_key()
-        key = await self.api_keys.add(ApiKey(
-            user_id=principal.id, key_hash=digest, key_prefix=prefix, name=name,
-            permissions=sorted(p.value for p in requested),
-            expires_at=(utcnow() + timedelta(days=expires_in_days)) if expires_in_days else None,
-        ))
-        audit.record(self.session, ctx, "apikey.create", "api_key", key.id, name=name,
-                     permissions=key.permissions)
+        key = await self.api_keys.add(
+            ApiKey(
+                user_id=principal.id,
+                key_hash=digest,
+                key_prefix=prefix,
+                name=name,
+                permissions=sorted(p.value for p in requested),
+                expires_at=(utcnow() + timedelta(days=expires_in_days)) if expires_in_days else None,
+            )
+        )
+        audit.record(self.session, ctx, "apikey.create", "api_key", key.id, name=name, permissions=key.permissions)
         return key, plaintext
 
     async def revoke_api_key(self, principal: Principal, key_id: uuid.UUID, ctx: AuditContext) -> None:
@@ -286,8 +339,14 @@ class AuthService:
             current = None
         if current is None and existing is None:
             await self.links.add(TelegramLink(user_id=user.id, telegram_user_hash=tg_hash))
-        audit.record(self.session, AuditContext(user.id, ctx.ip_address, "telegram"), "telegram.link", "user",
-                     user.id, service_user=str(service.id))
+        audit.record(
+            self.session,
+            AuditContext(user.id, ctx.ip_address, "telegram"),
+            "telegram.link",
+            "user",
+            user.id,
+            service_user=str(service.id),
+        )
         return user
 
     async def unlink_telegram(self, service: Principal, telegram_user_id: int, ctx: AuditContext) -> bool:
@@ -297,16 +356,18 @@ class AuthService:
             return False
         user_id = link.user_id
         await self.links.delete(link)
-        audit.record(self.session, AuditContext(user_id, ctx.ip_address, "telegram"), "telegram.unlink", "user",
-                     user_id)
+        audit.record(
+            self.session, AuditContext(user_id, ctx.ip_address, "telegram"), "telegram.unlink", "user", user_id
+        )
         return True
 
     async def act_as_telegram_user(self, service: Principal, telegram_user_id: int) -> Principal:
         service.require(Permission.TELEGRAM_ACT_AS)
         link = await self.links.by_telegram_hash(self.telegram_hash(telegram_user_id))
         if link is None:
-            raise PermissionDenied("This Telegram account is not linked to a PHONEINTEL user",
-                                   code="telegram_not_linked")
+            raise PermissionDenied(
+                "This Telegram account is not linked to a PHONEINTEL user", code="telegram_not_linked"
+            )
         user = await self.users.get(link.user_id)
         if user is None:
             raise PermissionDenied("Linked account no longer exists", code="telegram_not_linked")

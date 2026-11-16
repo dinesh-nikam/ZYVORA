@@ -54,8 +54,9 @@ def _clip(value: object, limit: int = 1000) -> str:
     return str(value or "")[:limit]
 
 
-async def _safe_fetch(http: SafeHttpClient, url: str, domains: set[str], source: str, api_url: str,
-                      **kwargs: Any) -> FetchResult | PlatformLookup:
+async def _safe_fetch(
+    http: SafeHttpClient, url: str, domains: set[str], source: str, api_url: str, **kwargs: Any
+) -> FetchResult | PlatformLookup:
     try:
         return await http.fetch(url, allowed_domains=domains, target_label=source, **kwargs)
     except OutboundBlocked as exc:
@@ -78,18 +79,23 @@ class GitHubClient:
         headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
-        result = await _safe_fetch(self._http, api_url, {"api.github.com"}, self.source_name, api_url,
-                                   headers=headers)
+        result = await _safe_fetch(self._http, api_url, {"api.github.com"}, self.source_name, api_url, headers=headers)
         if isinstance(result, PlatformLookup):
             return result
         if result.status_code == 404:
             return PlatformLookup(self.source_name, api_url, exists=False, status_code=404)
         if result.status_code in (403, 429):
-            return PlatformLookup(self.source_name, api_url, exists=None, status_code=result.status_code,
-                                  error="rate_limited")
+            return PlatformLookup(
+                self.source_name, api_url, exists=None, status_code=result.status_code, error="rate_limited"
+            )
         if result.status_code != 200:
-            return PlatformLookup(self.source_name, api_url, exists=None, status_code=result.status_code,
-                                  error=f"http_{result.status_code}")
+            return PlatformLookup(
+                self.source_name,
+                api_url,
+                exists=None,
+                status_code=result.status_code,
+                error=f"http_{result.status_code}",
+            )
         data = _json(result)
         return PlatformLookup(
             source_name=self.source_name,
@@ -119,27 +125,41 @@ class YouTubeClient:
             params["forHandle"] = "@" + handle
         else:
             params["forUsername"] = handle
-        result = await _safe_fetch(self._http, api_url, {"www.googleapis.com"}, self.source_name, api_url,
-                                   params=params)
+        result = await _safe_fetch(
+            self._http, api_url, {"www.googleapis.com"}, self.source_name, api_url, params=params
+        )
         if isinstance(result, PlatformLookup):
             return result
         if result.status_code in (403, 429):
-            return PlatformLookup(self.source_name, api_url, exists=None, status_code=result.status_code,
-                                  error="quota_or_forbidden")
+            return PlatformLookup(
+                self.source_name, api_url, exists=None, status_code=result.status_code, error="quota_or_forbidden"
+            )
         if result.status_code != 200:
-            return PlatformLookup(self.source_name, api_url, exists=None, status_code=result.status_code,
-                                  error=f"http_{result.status_code}")
+            return PlatformLookup(
+                self.source_name,
+                api_url,
+                exists=None,
+                status_code=result.status_code,
+                error=f"http_{result.status_code}",
+            )
         items = _json(result).get("items") or []
         if not items:
             return PlatformLookup(self.source_name, api_url, exists=False, status_code=200)
         item = items[0]
         snippet = item.get("snippet") or {}
         custom = snippet.get("customUrl")
-        canonical = (f"https://www.youtube.com/{custom}".lower() if custom
-                     else f"https://www.youtube.com/channel/{item.get('id')}")
+        canonical = (
+            f"https://www.youtube.com/{custom}".lower()
+            if custom
+            else f"https://www.youtube.com/channel/{item.get('id')}"
+        )
         return PlatformLookup(
-            source_name=self.source_name, api_url=api_url, exists=True, status_code=200,
-            canonical_url=canonical, display_name=_clip(snippet.get("title"), 200),
+            source_name=self.source_name,
+            api_url=api_url,
+            exists=True,
+            status_code=200,
+            canonical_url=canonical,
+            display_name=_clip(snippet.get("title"), 200),
             public_text=[_clip(snippet.get("description"), 5000)],
         )
 
@@ -162,9 +182,12 @@ class RedditClient:
         basic = base64.b64encode(f"{self._client_id}:{self._client_secret}".encode()).decode()
         try:
             result = await self._http.fetch(
-                "https://www.reddit.com/api/v1/access_token", allowed_domains={"www.reddit.com"}, method="POST",
+                "https://www.reddit.com/api/v1/access_token",
+                allowed_domains={"www.reddit.com"},
+                method="POST",
                 data={"grant_type": "client_credentials"},
-                headers={"Authorization": f"Basic {basic}", "User-Agent": self._ua}, target_label=self.source_name,
+                headers={"Authorization": f"Basic {basic}", "User-Agent": self._ua},
+                target_label=self.source_name,
             )
         except (OutboundBlocked, httpx.HTTPError):
             logger.warning("reddit token request failed")
@@ -182,24 +205,39 @@ class RedditClient:
         token = await self._access_token()
         if token is None:
             return PlatformLookup(self.source_name, api_url, exists=None, error="auth_failed")
-        result = await _safe_fetch(self._http, api_url, {"oauth.reddit.com"}, self.source_name, api_url,
-                                   headers={"Authorization": f"Bearer {token}", "User-Agent": self._ua})
+        result = await _safe_fetch(
+            self._http,
+            api_url,
+            {"oauth.reddit.com"},
+            self.source_name,
+            api_url,
+            headers={"Authorization": f"Bearer {token}", "User-Agent": self._ua},
+        )
         if isinstance(result, PlatformLookup):
             return result
         if result.status_code == 404:
             return PlatformLookup(self.source_name, api_url, exists=False, status_code=404)
         if result.status_code in (401, 403):
-            return PlatformLookup(self.source_name, api_url, exists=None, restricted=True,
-                                  status_code=result.status_code)
+            return PlatformLookup(
+                self.source_name, api_url, exists=None, restricted=True, status_code=result.status_code
+            )
         if result.status_code != 200:
-            return PlatformLookup(self.source_name, api_url, exists=None, status_code=result.status_code,
-                                  error=f"http_{result.status_code}")
+            return PlatformLookup(
+                self.source_name,
+                api_url,
+                exists=None,
+                status_code=result.status_code,
+                error=f"http_{result.status_code}",
+            )
         data = _json(result).get("data") or {}
         if data.get("is_suspended"):
             return PlatformLookup(self.source_name, api_url, exists=True, restricted=True, status_code=200)
         sub = data.get("subreddit") or {}
         return PlatformLookup(
-            source_name=self.source_name, api_url=api_url, exists=True, status_code=200,
+            source_name=self.source_name,
+            api_url=api_url,
+            exists=True,
+            status_code=200,
             canonical_url=f"https://www.reddit.com/user/{handle}/",
             display_name=_clip(data.get("name"), 100),
             public_text=[_clip(sub.get("public_description"), 2000), _clip(sub.get("title"), 300)],
@@ -219,19 +257,28 @@ class TelegramBotApiClient:
     async def lookup(self, handle: str, kind: str) -> PlatformLookup:
         public_api_url = "https://api.telegram.org/bot<token>/getChat"
         url = f"https://api.telegram.org/bot{self._token}/getChat"
-        result = await _safe_fetch(self._http, url, {"api.telegram.org"}, self.source_name, public_api_url,
-                                   params={"chat_id": "@" + handle})
+        result = await _safe_fetch(
+            self._http, url, {"api.telegram.org"}, self.source_name, public_api_url, params={"chat_id": "@" + handle}
+        )
         if isinstance(result, PlatformLookup):
             return result
         data = _json(result)
         if result.status_code == 200 and data.get("ok"):
             chat = data.get("result") or {}
             return PlatformLookup(
-                source_name=self.source_name, api_url=public_api_url, exists=True, status_code=200,
+                source_name=self.source_name,
+                api_url=public_api_url,
+                exists=True,
+                status_code=200,
                 canonical_url=f"https://t.me/{str(chat.get('username') or handle).lower()}",
                 display_name=_clip(chat.get("title") or chat.get("first_name"), 200),
                 public_text=[_clip(chat.get("description") or chat.get("bio"), 2000)],
             )
         # Bot API cannot resolve most *user* accounts by username; this is not proof of absence.
-        return PlatformLookup(self.source_name, public_api_url, exists=None, status_code=result.status_code,
-                              error="not_resolvable_via_bot_api")
+        return PlatformLookup(
+            self.source_name,
+            public_api_url,
+            exists=None,
+            status_code=result.status_code,
+            error="not_resolvable_via_bot_api",
+        )

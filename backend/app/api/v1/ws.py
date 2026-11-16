@@ -36,8 +36,11 @@ async def _authenticate(container: Container, message: dict[str, Any], investiga
     token = str(message.get("token") or "")
     async with container.sessionmaker() as session:
         auth = AuthService(session, container.settings, container.tokens, container.redis, container.indexer)
-        principal = (await auth.authenticate_api_key(token) if looks_like_api_key(token)
-                     else await auth.authenticate_bearer(token))
+        principal = (
+            await auth.authenticate_api_key(token)
+            if looks_like_api_key(token)
+            else await auth.authenticate_bearer(token)
+        )
         tg = message.get("telegram_user_id")
         if tg is not None:
             principal = await auth.act_as_telegram_user(principal, int(tg))

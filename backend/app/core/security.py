@@ -27,10 +27,20 @@ _hasher = PasswordHasher(time_cost=2, memory_cost=19_456, parallelism=1, hash_le
 # Pre-computed hash used to equalise timing when the user does not exist.
 _DUMMY_HASH = _hasher.hash("phoneintel-dummy-password-for-timing")
 
-_COMMON_PASSWORDS = frozenset({
-    "password1234", "123456789012", "qwertyuiopas", "passwordpassword", "letmein12345",
-    "iloveyou1234", "administrator", "welcome12345", "changeme1234", "phoneintel123",
-})
+_COMMON_PASSWORDS = frozenset(
+    {
+        "password1234",
+        "123456789012",
+        "qwertyuiopas",
+        "passwordpassword",
+        "letmein12345",
+        "iloveyou1234",
+        "administrator",
+        "welcome12345",
+        "changeme1234",
+        "phoneintel123",
+    }
+)
 
 API_KEY_PREFIX = "pi"
 
