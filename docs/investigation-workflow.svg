@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 270" role="img" aria-labelledby="title desc">
+  <title id="title">ZYVORA investigation workflow</title>
+  <desc id="desc">An investigation moves from authorization and validation through discovery, verification, evidence, and reporting.</desc>
+  <defs>
+    <linearGradient id="step" x1="0" x2="1">
+      <stop offset="0" stop-color="#1d4ed8"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+    <marker id="arrow" markerHeight="8" markerWidth="8" orient="auto" refX="7" refY="4"><path d="M0 0 8 4 0 8z" fill="#64748b"/></marker>
+    <style>
+      .title { font: 600 19px Inter,Segoe UI,Arial,sans-serif; fill: #f8fafc; }
+      .sub { font: 400 14px Inter,Segoe UI,Arial,sans-serif; fill: #cbd5e1; }
+      .line { stroke: #64748b; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1200" height="270" rx="24" fill="#0b1020"/>
+  <g transform="translate(30 65)">
+    <rect width="175" height="115" rx="16" fill="url(#step)"/><text x="87" y="48" text-anchor="middle" class="title">Authorize</text><text x="87" y="76" text-anchor="middle" class="sub">purpose + basis</text>
+    <path d="M175 58h30" class="line"/>
+    <g transform="translate(235)"><rect width="175" height="115" rx="16" fill="url(#step)"/><text x="87" y="48" text-anchor="middle" class="title">Validate</text><text x="87" y="76" text-anchor="middle" class="sub">normalize number</text></g>
+    <path d="M410 58h30" class="line"/>
+    <g transform="translate(470)"><rect width="175" height="115" rx="16" fill="url(#step)"/><text x="87" y="48" text-anchor="middle" class="title">Discover</text><text x="87" y="76" text-anchor="middle" class="sub">public sources</text></g>
+    <path d="M645 58h30" class="line"/>
+    <g transform="translate(705)"><rect width="175" height="115" rx="16" fill="url(#step)"/><text x="87" y="48" text-anchor="middle" class="title">Verify</text><text x="87" y="76" text-anchor="middle" class="sub">evidence + score</text></g>
+    <path d="M880 58h30" class="line"/>
+    <g transform="translate(940)"><rect width="175" height="115" rx="16" fill="url(#step)"/><text x="87" y="48" text-anchor="middle" class="title">Report</text><text x="87" y="76" text-anchor="middle" class="sub">audit + export</text></g>
+  </g>
+</svg>

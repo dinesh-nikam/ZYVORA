@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">ZYVORA architecture</title>
+  <desc id="desc">Clients connect to the FastAPI API, which coordinates PostgreSQL, Redis workers, and public-source integrations.</desc>
+  <defs>
+    <linearGradient id="api" x1="0" x2="1">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <marker id="arrow" markerHeight="8" markerWidth="8" orient="auto" refX="7" refY="4">
+      <path d="M0 0 8 4 0 8z" fill="#94a3b8"/>
+    </marker>
+    <style>
+      .label { font: 600 22px Inter,Segoe UI,Arial,sans-serif; fill: #e2e8f0; }
+      .small { font: 400 16px Inter,Segoe UI,Arial,sans-serif; fill: #cbd5e1; }
+      .box { stroke: #334155; stroke-width: 2; }
+      .line { stroke: #94a3b8; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1200" height="620" rx="28" fill="#0b1020"/>
+  <text x="60" y="62" class="label" font-size="30">ZYVORA platform architecture</text>
+  <text x="60" y="91" class="small">Privacy-conscious phone intelligence for authorized investigations</text>
+  <rect x="70" y="150" width="250" height="100" rx="18" class="box" fill="#172554"/>
+  <text x="195" y="192" text-anchor="middle" class="label">CLI</text><text x="195" y="220" text-anchor="middle" class="small">phoneintel</text>
+  <rect x="70" y="290" width="250" height="100" rx="18" class="box" fill="#172554"/>
+  <text x="195" y="332" text-anchor="middle" class="label">Telegram bot</text><text x="195" y="360" text-anchor="middle" class="small">phoneintel-bot</text>
+  <rect x="70" y="430" width="250" height="100" rx="18" class="box" fill="#172554"/>
+  <text x="195" y="472" text-anchor="middle" class="label">Operators</text><text x="195" y="500" text-anchor="middle" class="small">authorized clients</text>
+  <rect x="465" y="215" width="300" height="220" rx="22" class="box" fill="url(#api)"/>
+  <text x="615" y="290" text-anchor="middle" class="label">FastAPI API</text>
+  <text x="615" y="325" text-anchor="middle" class="small">Auth • RBAC • Audit</text>
+  <text x="615" y="352" text-anchor="middle" class="small">Discovery • Verification</text>
+  <text x="615" y="379" text-anchor="middle" class="small">Reports • WebSockets</text>
+  <rect x="900" y="130" width="230" height="110" rx="18" class="box" fill="#11332f"/>
+  <text x="1015" y="177" text-anchor="middle" class="label">PostgreSQL</text><text x="1015" y="207" text-anchor="middle" class="small">encrypted data + audit</text>
+  <rect x="900" y="285" width="230" height="110" rx="18" class="box" fill="#3b2411"/>
+  <text x="1015" y="332" text-anchor="middle" class="label">Redis + ARQ</text><text x="1015" y="362" text-anchor="middle" class="small">jobs + rate limits</text>
+  <rect x="900" y="440" width="230" height="110" rx="18" class="box" fill="#312e1b"/>
+  <text x="1015" y="487" text-anchor="middle" class="label">Public sources</text><text x="1015" y="517" text-anchor="middle" class="small">search + official APIs</text>
+  <path d="M320 200h145M320 340h145M320 480h100q45 0 45-45" class="line"/>
+  <path d="M765 275h135M765 350h135M765 405q135 0 135 90" class="line"/>
+</svg>

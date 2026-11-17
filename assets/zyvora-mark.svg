@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 160" role="img" aria-labelledby="title desc">
+  <title id="title">ZYVORA</title>
+  <desc id="desc">The ZYVORA wordmark with a geometric shield icon.</desc>
+  <defs>
+    <linearGradient id="glow" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="160" rx="28" fill="#0b1020"/>
+  <path d="M80 28 126 44v34c0 31-20 48-46 57-26-9-46-26-46-57V44z" fill="url(#glow)"/>
+  <path d="m51 56 29 20 29-20v17L80 94 51 73z" fill="#fff" opacity=".96"/>
+  <path d="m51 56 29-16 29 16-29 20z" fill="#fff" opacity=".72"/>
+  <text x="164" y="101" fill="#f8fafc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="68" font-weight="700" letter-spacing="10">ZYVORA</text>
+</svg>
