@@ -18,12 +18,15 @@ async def test_register_login_me(client: httpx.AsyncClient) -> None:
     assert "admin:users" not in body["permissions"]
 
 
-@pytest.mark.parametrize("payload", [
-    {"email": "not-an-email", "password": "Correct-Horse-Battery-9"},
-    {"email": "a@example.org", "password": "short"},
-    {"email": "a@example.org"},
-    {"email": "a@example.org", "password": "Correct-Horse-Battery-9", "role": "admin"},  # mass assignment
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"email": "not-an-email", "password": "Correct-Horse-Battery-9"},
+        {"email": "a@example.org", "password": "short"},
+        {"email": "a@example.org"},
+        {"email": "a@example.org", "password": "Correct-Horse-Battery-9", "role": "admin"},  # mass assignment
+    ],
+)
 async def test_register_rejects_invalid_payloads(client: httpx.AsyncClient, payload: dict) -> None:
     r = await client.post("/api/v1/auth/register", json=payload)
     assert r.status_code == 422
@@ -32,8 +35,9 @@ async def test_register_rejects_invalid_payloads(client: httpx.AsyncClient, payl
 
 async def test_duplicate_registration(client: httpx.AsyncClient) -> None:
     await register_and_login(client, "dup@example.org")
-    r = await client.post("/api/v1/auth/register", json={"email": "dup@example.org",
-                                                          "password": "Correct-Horse-Battery-9"})
+    r = await client.post(
+        "/api/v1/auth/register", json={"email": "dup@example.org", "password": "Correct-Horse-Battery-9"}
+    )
     assert r.status_code == 409
 
 
@@ -54,8 +58,9 @@ async def test_account_lockout(tmp_path, web) -> None:
     settings = make_settings(tmp_path, max_failed_logins=3)
     container = await build_container(settings, resolver=web.resolve, transport=web.transport(), eager_jobs=True)
     await _prepare_db(container)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(settings, container)),
-                                 base_url="http://t") as client:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=create_app(settings, container)), base_url="http://t"
+    ) as client:
         user = await register_and_login(client, "lock@example.org")
         for _ in range(3):
             await client.post("/api/v1/auth/login", json={"email": user.email, "password": "Wrong-Password-1"})
@@ -88,8 +93,11 @@ async def test_logout_revokes_access_and_refresh(client: httpx.AsyncClient) -> N
 
 async def test_api_key_lifecycle(client: httpx.AsyncClient) -> None:
     user = await register_and_login(client)
-    r = await client.post("/api/v1/api-keys", headers=user.headers,
-                          json={"name": "cli laptop", "permissions": ["phone:validate", "investigation:read"]})
+    r = await client.post(
+        "/api/v1/api-keys",
+        headers=user.headers,
+        json={"name": "cli laptop", "permissions": ["phone:validate", "investigation:read"]},
+    )
     assert r.status_code == 201
     created = r.json()
     key = created["api_key"]
@@ -99,9 +107,16 @@ async def test_api_key_lifecycle(client: httpx.AsyncClient) -> None:
     ok = await client.post("/api/v1/phone/validate", headers={"X-API-Key": key}, json={"phone": "+919876543210"})
     assert ok.status_code == 200
     # Scoped key cannot create investigations.
-    denied = await client.post("/api/v1/investigations", headers={"X-API-Key": key}, json={
-        "phone": "+919876543210", "purpose": "scoped key check", "authorization_basis": "own_number",
-        "acknowledge_limitations": True})
+    denied = await client.post(
+        "/api/v1/investigations",
+        headers={"X-API-Key": key},
+        json={
+            "phone": "+919876543210",
+            "purpose": "scoped key check",
+            "authorization_basis": "own_number",
+            "acknowledge_limitations": True,
+        },
+    )
     assert denied.status_code == 403
     assert (await client.delete(f"/api/v1/api-keys/{created['id']}", headers=user.headers)).status_code == 204
     revoked = await client.post("/api/v1/phone/validate", headers={"X-API-Key": key}, json={"phone": "+91"})
@@ -110,8 +125,9 @@ async def test_api_key_lifecycle(client: httpx.AsyncClient) -> None:
 
 async def test_api_key_cannot_escalate(client: httpx.AsyncClient) -> None:
     user = await register_and_login(client)
-    r = await client.post("/api/v1/api-keys", headers=user.headers,
-                          json={"name": "escalate", "permissions": ["admin:users"]})
+    r = await client.post(
+        "/api/v1/api-keys", headers=user.headers, json={"name": "escalate", "permissions": ["admin:users"]}
+    )
     assert r.status_code == 403
 
 
@@ -124,13 +140,16 @@ async def test_pending_accounts_cannot_login(tmp_path, web) -> None:
     settings = make_settings(tmp_path, default_user_status="pending")
     container = await build_container(settings, resolver=web.resolve, transport=web.transport(), eager_jobs=True)
     await _prepare_db(container)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(settings, container)),
-                                 base_url="http://t") as client:
-        r = await client.post("/api/v1/auth/register", json={"email": "p@example.org",
-                                                              "password": "Correct-Horse-Battery-9"})
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=create_app(settings, container)), base_url="http://t"
+    ) as client:
+        r = await client.post(
+            "/api/v1/auth/register", json={"email": "p@example.org", "password": "Correct-Horse-Battery-9"}
+        )
         assert r.json()["status"] == "pending"
-        login = await client.post("/api/v1/auth/login", json={"email": "p@example.org",
-                                                               "password": "Correct-Horse-Battery-9"})
+        login = await client.post(
+            "/api/v1/auth/login", json={"email": "p@example.org", "password": "Correct-Horse-Battery-9"}
+        )
         assert login.status_code == 403
         assert login.json()["error"]["code"] == "account_pending"
     await container.aclose()
@@ -145,10 +164,15 @@ async def test_auth_rate_limit(tmp_path, web) -> None:
     settings = make_settings(tmp_path, rate_limit_auth="3/minute")
     container: Container = await build_container(settings, resolver=web.resolve, transport=web.transport())
     await _prepare_db(container)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(settings, container)),
-                                 base_url="http://t") as client:
-        codes = [(await client.post("/api/v1/auth/login", json={"email": "x@example.org", "password": "Wrong-1234567"}
-                                    )).status_code for _ in range(5)]
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=create_app(settings, container)), base_url="http://t"
+    ) as client:
+        codes = [
+            (
+                await client.post("/api/v1/auth/login", json={"email": "x@example.org", "password": "Wrong-1234567"})
+            ).status_code
+            for _ in range(5)
+        ]
         assert codes[:3] == [401, 401, 401]
         assert codes[3] == 429
         limited = await client.post("/api/v1/auth/login", json={"email": "x@example.org", "password": "x"})

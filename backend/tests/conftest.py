@@ -107,23 +107,48 @@ TELEGRAM_PAGE = """<!DOCTYPE html><html><head><title>Telegram: Contact @acmehelp
 def default_web() -> MockWeb:
     web = MockWeb()
     results = [
-        {"url": "https://www.instagram.com/acme_support/", "title": "ACME Support (@acme_support)",
-         "description": "Customer care: +91 98765 43210. DM us for help."},
-        {"url": "https://example-directory.com/listing/42", "title": "ACME listing",
-         "description": "Phone <strong>+919876543210</strong> - Telegram t.me/acmehelp - github.com/acmedev"},
-        {"url": "https://www.facebook.com/john.doe.123", "title": "John Doe | Facebook",
-         "description": "John Doe is on Facebook. Join Facebook to connect with John Doe."},
+        {
+            "url": "https://www.instagram.com/acme_support/",
+            "title": "ACME Support (@acme_support)",
+            "description": "Customer care: +91 98765 43210. DM us for help.",
+        },
+        {
+            "url": "https://example-directory.com/listing/42",
+            "title": "ACME listing",
+            "description": "Phone <strong>+919876543210</strong> - Telegram t.me/acmehelp - github.com/acmedev",
+        },
+        {
+            "url": "https://www.facebook.com/john.doe.123",
+            "title": "John Doe | Facebook",
+            "description": "John Doe is on Facebook. Join Facebook to connect with John Doe.",
+        },
         {"url": "https://www.instagram.com/acme_support", "title": "duplicate", "description": "dup"},
-        {"url": "https://unrelated.example.org/page", "title": "Numbers",
-         "description": "Our office number is +91 98765 43210."},
+        {
+            "url": "https://unrelated.example.org/page",
+            "title": "Numbers",
+            "description": "Our office number is +91 98765 43210.",
+        },
     ]
     web.add("https://api.search.brave.com/res/v1/web/search", brave_payload(results))
     web.add("https://t.me/robots.txt", httpx.Response(200, text="User-agent: *\nAllow: /\n"))
-    web.add("https://t.me/acmehelp", httpx.Response(200, text=TELEGRAM_PAGE,
-                                                    headers={"content-type": "text/html; charset=utf-8"}))
-    web.add("https://api.github.com/users/acmedev", httpx.Response(200, json={
-        "login": "acmedev", "name": "ACME Dev", "html_url": "https://github.com/acmedev",
-        "bio": "Hotline +91-98765-43210", "blog": "", "company": "ACME"}))
+    web.add(
+        "https://t.me/acmehelp",
+        httpx.Response(200, text=TELEGRAM_PAGE, headers={"content-type": "text/html; charset=utf-8"}),
+    )
+    web.add(
+        "https://api.github.com/users/acmedev",
+        httpx.Response(
+            200,
+            json={
+                "login": "acmedev",
+                "name": "ACME Dev",
+                "html_url": "https://github.com/acmedev",
+                "bio": "Hotline +91-98765-43210",
+                "blog": "",
+                "company": "ACME",
+            },
+        ),
+    )
     web.add("https://api.github.com/users/ghost-user", httpx.Response(404, json={"message": "Not Found"}))
     return web
 
@@ -178,8 +203,9 @@ class UserCtx:
         return {"Authorization": f"Bearer {self.access}"}
 
 
-async def register_and_login(client: httpx.AsyncClient, email: str | None = None,
-                             password: str = "Correct-Horse-Battery-9") -> UserCtx:
+async def register_and_login(
+    client: httpx.AsyncClient, email: str | None = None, password: str = "Correct-Horse-Battery-9"
+) -> UserCtx:
     email = email or f"analyst-{uuid.uuid4().hex[:8]}@example.org"
     r = await client.post("/api/v1/auth/register", json={"email": email, "password": password})
     assert r.status_code == 201, r.text
@@ -205,10 +231,17 @@ async def analyst(client: httpx.AsyncClient) -> UserCtx:
 
 
 async def create_investigation(client: httpx.AsyncClient, user: UserCtx, phone: str = PHONE) -> dict[str, Any]:
-    r = await client.post("/api/v1/investigations", headers=user.headers, json={
-        "phone": phone, "purpose": "Fraud report triage for ticket 4411", "authorization_basis": "fraud_prevention",
-        "authorization_reference": "TICKET-4411", "acknowledge_limitations": True,
-    })
+    r = await client.post(
+        "/api/v1/investigations",
+        headers=user.headers,
+        json={
+            "phone": phone,
+            "purpose": "Fraud report triage for ticket 4411",
+            "authorization_basis": "fraud_prevention",
+            "authorization_reference": "TICKET-4411",
+            "acknowledge_limitations": True,
+        },
+    )
     assert r.status_code == 201, r.text
     return r.json()
 

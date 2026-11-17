@@ -1,25 +1,16 @@
-# Caddy Reverse Proxy Configuration for PHONEINTEL
+# Public TLS edge for the PHONEINTEL API. Caddy obtains and renews the certificate
+# automatically (ACME); PUBLIC_HOSTNAME must resolve to this host and ports 80/443 must be open.
 {
-    email admin@example.org
-    auto_https off
+	email {$ACME_EMAIL}
 }
 
-:80 {
-    encode gzip zstd
+{$PUBLIC_HOSTNAME} {
+	encode zstd gzip
+	header -Server
 
-    # Security Headers
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "DENY"
-        Referrer-Policy "no-referrer"
-        Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()"
-    }
+	# Prometheus scrapes the API on the internal network; metrics are never served publicly.
+	respond /metrics* 404
 
-    # Proxy API and Docs
-    reverse_proxy api:8000 {
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-    }
+	# Caddy sets X-Forwarded-For/-Proto/-Host itself and ignores client-supplied values.
+	reverse_proxy api:8000
 }
